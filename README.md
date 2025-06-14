@@ -1,6 +1,15 @@
 # Modern Data Stack Lab: Local & Learn
 
+NOTE: This repo is a first draft, work in progress. I may fix stuff, I may not. The intent was to prepare for some Data Engineering interviews and learn some things.
+
 This repository contains the comprehensive guide and a Docker Compose-based local development environment for building and understanding a modern, enterprise-ready data platform. It emphasizes practical, hands-on experience with core data engineering technologies, covering ingestion, storage, processing, orchestration, observability, and governance.
+
+The `docs` folder has all the relevant documentation about this project.
+- deep dives: My attempt to provide some basic howtos with the platform.
+- highlights: My attempt to showcase a particular core component in the platform.
+- Building Enterprise-Ready Data Platforms v2.4.pdf: This was the "final" version I started breaking up.
+- Building Enterprise-Ready Data Platforms_ Core Handbook v1.pdf: The starting point for the broken-up parts.
+- Data Platform *: Docs I made before I did the Deep Dives and Highlights. Might be some overlap.
 
 ## Table of Contents
 
