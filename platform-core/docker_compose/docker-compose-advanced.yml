@@ -1,0 +1,219 @@
+# Description: Conceptual docker-compose.yml for Advanced Track.
+# Source: Building Enterprise-Ready Data Platforms v2.4, Section 3.3.
+#
+# This snippet expands on the Intermediate components by adding Airflow,
+# Observability (Grafana, Grafana Alloy, cAdvisor), Lineage (Spline),
+# and Metadata Management (OpenMetadata, MongoDB).
+# Note: This is a conceptual snippet. The full docker-compose.yml would contain
+# a comprehensive definition of all services used in the Advanced Track.
+# Advanced Track: Add Airflow, Observability, Lineage, Metadata
+version: '3.8'
+services:
+  # ... (postgres, mongodb, minio, zookeeper, kafka, fastapi_ingestor, spark-master/workers/history services) ...
+
+  # Airflow Services
+  airflow-scheduler:
+    image: apache/airflow:2.8.1
+    container_name: advanced-airflow-scheduler
+    restart: always
+    depends_on:
+      airflow-webserver:
+        condition: service_healthy
+      postgres: # Airflow metadata database
+        condition: service_healthy
+      kafka: # For DAGs that interact with Kafka (e.g., Spark jobs)
+        condition: service_healthy
+    environment:
+      AIRFLOW_HOME: /opt/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor # For local dev; CeleryExecutor for production
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://user:password@postgres/main_db
+      AIRFLOW__WEBSERVER__WEB_SERVER_PORT: 8080
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    volumes:
+      - ./airflow_dags:/opt/airflow/dags
+      - ./data/airflow_logs:/opt/airflow/logs
+      - ./orchestrator/plugins:/opt/airflow/plugins # If you have custom plugins
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $$HOSTNAME"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+  airflow-webserver:
+    image: apache/airflow:2.8.1
+    container_name: advanced-airflow-webserver
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8080" # Mapped to 8081 to avoid conflict with Spark Master UI
+    environment:
+      AIRFLOW_HOME: /opt/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://user:password@postgres/main_db
+      AIRFLOW__WEBSERVER__WEB_SERVER_PORT: 8080
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    volumes:
+      - ./airflow_dags:/opt/airflow/dags
+      - ./data/airflow_logs:/opt/airflow/logs
+      - ./orchestrator/plugins:/opt/airflow/plugins
+    command: webserver
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # Observability Components
+  grafana:
+    image: grafana/grafana:latest
+    container_name: advanced-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000" # Grafana Web UI
+    volumes:
+      - ./data/grafana:/var/lib/grafana # Persistent storage for Grafana data
+      - ./observability/grafana_dashboards:/etc/grafana/provisioning/dashboards # Mount dashboards
+      - ./observability/grafana_datasources:/etc/grafana/provisioning/datasources # Mount datasources
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on:
+      grafana_alloy:
+        condition: service_started
+      cadvisor:
+        condition: service_started
+  grafana_alloy:
+    image: grafana/alloy:latest
+    container_name: advanced-grafana_alloy
+    restart: unless-stopped
+    ports:
+      - "4317:4317" # OTLP gRPC endpoint for receiving telemetry
+      - "4318:4318" # OTLP HTTP endpoint for receiving telemetry
+      - "12345:12345" # Example Prometheus scrape port for Grafana to pull metrics from Alloy
+    volumes:
+      - ./observability/alloy-config.river:/etc/alloy/config.river # Mount your Alloy configuration
+    command: -config.file=/etc/alloy/config.river
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0 # Stable version for container metrics
+    container_name: advanced-cadvisor
+    restart: unless-stopped
+    ports:
+      - "8082:8080" # Default cAdvisor UI/metrics port (mapped to 8082 to avoid conflicts)
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    command: --listen_ip=0.0.0.0 --port=8080 # Expose on all interfaces on port 8080
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Data Lineage (Spline) Components
+  spline-rest:
+    image: absaspline/spline-rest-server:0.7.1 # Use a specific version
+    container_name: advanced-spline-rest
+    restart: unless-stopped
+    ports:
+      - "8083:8080" # Spline REST API server (mapped to 8083 to avoid conflicts)
+    depends_on:
+      postgres: # Spline can use a persistent DB for metadata
+        condition: service_healthy
+    environment:
+      SPLINE_DATABASE_CONNECTION_URL: jdbc:postgresql://postgres:5432/main_db # Connect to existing postgres
+      SPLINE_DATABASE_DRIVER: org.postgresql.Driver
+      SPLINE_DATABASE_USER: user
+      SPLINE_DATABASE_PASSWORD: password
+  spline-ui:
+    image: absaspline/spline-web-ui:0.7.1 # Use a specific version
+    container_name: advanced-spline-ui
+    restart: unless-stopped
+    ports:
+      - "9090:80" # Spline Web UI
+    environment:
+      SPLINE_API_URL: http://spline-rest:8080 # Connects to the spline-rest service
+    depends_on:
+      - spline-rest
+
+  # Metadata Management (OpenMetadata) Components
+  openmetadata-mysql:
+    image: mysql:8.0
+    container_name: advanced-openmetadata-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: openmetadata_user
+      MYSQL_USER: openmetadata_user
+      MYSQL_PASSWORD: openmetadata_password
+      MYSQL_DATABASE: openmetadata_db
+    volumes:
+      - ./data/openmetadata_mysql:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  openmetadata-elasticsearch:
+    image: opensearchproject/opensearch:2.11.0 # Or elasticsearch:7.17.10
+    container_name: advanced-openmetadata-elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200" # HTTP API
+      - "9600:9600" # Transport port
+    volumes:
+      - ./data/openmetadata_elasticsearch:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cat/health?h=st | grep -q green"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+  openmetadata-server:
+    image: openmetadata/openmetadata:1.3.1
+    container_name: advanced-openmetadata-server
+    restart: unless-stopped
+    depends_on:
+      openmetadata-mysql:
+        condition: service_healthy
+      openmetadata-elasticsearch:
+        condition: service_healthy
+    ports:
+      - "8585:8585" # OpenMetadata Web UI
+    environment:
+      MYSQL_HOST: openmetadata-mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: openmetadata_db
+      MYSQL_USER: openmetadata_user
+      MYSQL_PASSWORD: openmetadata_password
+      ELASTICSEARCH_HOST: openmetadata-elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      APP_ENV: local
+    command: ["./docker/run_server.sh"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8585/api/v1/health | grep -q OK"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+  openmetadata-ingestion:
+    image: openmetadata/ingestion-base:1.3.1
+    container_name: advanced-openmetadata-ingestion
+    restart: on-failure
+    depends_on:
+      openmetadata-server:
+        condition: service_healthy
+    environment:
+      OPENMETADATA_SERVER_URL: http://openmetadata-server:8585
+    volumes:
+      - ./openmetadata_ingestion_scripts:/opt/openmetadata/examples/workflows

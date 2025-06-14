@@ -1,0 +1,40 @@
+# Description: Example docker-compose.yml snippet illustrating healthchecks and dependencies.
+# Source: Highlighting Docker/Docker Compose, Advanced Use Case 1.
+version: '3.8'
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    healthcheck: # Healthcheck for Zookeeper
+      test: ["CMD", "sh", "-c", "nc -z localhost 2181 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s # Give it time to start before checking
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      zookeeper:
+        condition: service_healthy # Kafka waits for Zookeeper to be healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck: # Healthcheck for Kafka
+      test: ["CMD", "sh", "-c", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+  spark:
+    image: bitnami/spark:3.5.0
+    depends_on:
+      kafka:
+        condition: service_healthy # Spark waits for Kafka to be healthy
+      minio:
+        condition: service_healthy # Spark waits for MinIO to be healthy
+    # ... other Spark configurations ...

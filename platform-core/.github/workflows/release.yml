@@ -1,0 +1,122 @@
+# Description: Conceptual GitHub Actions Release Workflow for CI/CD.
+# Source: Building Enterprise-Ready Data Platforms v2.4, Section 5.3 CI/CD.
+#
+# This workflow demonstrates building, publishing, testing on staging, and conditionally promoting to production.
+name: Release Pipeline
+on:
+  push:
+    branches:
+      - release # Trigger on pushes to a 'release' branch, or tag pushes
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+    inputs:
+      version:
+        description: 'Release Version (e.g., v1.0.0)'
+        required: true
+
+jobs:
+  build-and-publish-images:
+    runs-on: ubuntu-latest
+    outputs:
+      fastapi_image: ${{ steps.build_fastapi.outputs.image_name }}
+      pyspark_image: ${{ steps.build_pyspark.outputs.image_name }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Set up Docker BuildX
+      uses: docker/setup-buildx-action@v2
+    - name: Log in to Docker Hub (or ECR)
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_TOKEN }}
+        # For ECR: registry: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+    - name: Build and push FastAPI Ingestor image
+      id: build_fastapi
+      uses: docker/build-push-action@v4
+      with:
+        context: ./fastapi_app
+        push: true
+        tags: yourusername/fastapi-ingestor:${{ github.sha }} # Use Git SHA for unique tag
+        # For ECR: tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/fastapi-ingestor:${{ github.sha }}
+        outputs: type=string,name=image_name
+
+    - name: Build and push PySpark Job image (base for running jobs)
+      id: build_pyspark
+      uses: docker/build-push-action@v4
+      with:
+        context: ./pyspark_jobs # Assuming a Dockerfile here for PySpark environment
+        push: true
+        tags: yourusername/pyspark-job-runner:${{ github.sha }}
+        outputs: type=string,name=image_name
+
+  deploy-to-staging:
+    needs: build-and-publish-images
+    runs-on: ubuntu-latest
+    environment: staging # Links to GitHub Environments
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Configure AWS Credentials (for IaC deployment)
+      uses: aws-actions/configure-aws-credentials@v3
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.5.0 # Or desired version
+
+    - name: Terraform Init (Staging)
+      run: terraform -chdir=./terraform_infra/environments/staging init
+
+    - name: Terraform Apply (Staging)
+      run: terraform -chdir=./terraform_infra/environments/staging apply -auto-approve \
+             -var="fastapi_image_tag=${{ needs.build-and-publish-images.outputs.fastapi_image }}" \
+             -var="pyspark_image_tag=${{ needs.build-and-publish-images.outputs.pyspark_image }}"
+      env:
+        TF_VAR_environment: staging # Pass environment variable to Terraform
+
+    - name: Run End-to-End Smoke Tests on Staging
+      # This would involve:
+      # 1. Waiting for staging deployment to complete
+      # 2. Triggering data generation against staging API Gateway
+      # 3. Verifying data in S3/Delta Lake or triggering a Spark job
+      # 4. Checking Grafana/CloudWatch for basic health metrics
+      run: |
+        echo "Running smoke tests on staging environment using deployed API and data lake."
+        # Example: python scripts/run_smoke_tests.py --env staging --api-url ${{ secrets.STAGING_API_URL }}
+        sleep 60 # Simulate test execution
+        echo "Staging smoke tests passed."
+
+  promote-to-production:
+    needs: deploy-to-staging
+    runs-on: ubuntu-latest
+    environment: production # Links to GitHub Environments, requires manual approval
+    if: success() && github.ref == 'refs/heads/release' # Only promote if staging passed and on release branch
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Configure AWS Credentials (for IaC deployment)
+      uses: aws-actions/configure-aws-credentials@v3
+      with:
+        aws-access-key-id: ${{ secrets.AWS_PROD_ACCESS_KEY_ID }} # Use production specific credentials
+        aws-secret-access-key: ${{ secrets.AWS_PROD_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.5.0
+
+    - name: Terraform Init (Production)
+      run: terraform -chdir=./terraform_infra/environments/prod init
+
+    - name: Terraform Apply (Production)
+      run: terraform -chdir=./terraform_infra/environments/prod apply -auto-approve \
+             -var="fastapi_image_tag=${{ needs.build-and-publish-images.outputs.fastapi_image }}" \
+             -var="pyspark_image_tag=${{ needs.build-and-publish-images.outputs.pyspark_image }}"
+      env:
+        TF_VAR_environment: prod
