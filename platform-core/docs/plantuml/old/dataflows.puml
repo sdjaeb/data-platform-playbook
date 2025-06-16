@@ -1,0 +1,76 @@
+@startuml DataFlowDiagram
+!theme toy
+
+' styling
+skinparam activityBorderThickness 1
+skinparam activityBorderColor black
+skinparam activityArrowThickness 2
+skinparam activityArrowColor #555
+skinparam activityFontSize 14
+skinparam activityFontName SansSerif
+skinparam activityEndColor #FF6347
+skinparam activityStartColor #7FFFD4
+
+title Data Flow Diagram
+
+' Data Ingestion
+package "Data Ingestion" {
+  component "FastAPI Ingestor" as FastAPI_Ingestor_Comp
+  queue     "Kafka Topic\n(raw_financial_insurance_data)" as Kafka_Topic_Comp
+  FastAPI_Ingestor_Comp --> Kafka_Topic_Comp : Publish Data (JSON/Protobuf)
+}
+
+' Data Processing & Transformation
+package "Data Processing & Transformation" {
+  component "Spark Structured Streaming\n(Kafka Consumer)" as Spark_Consumer_Comp
+  database  "MinIO (Delta Lake Raw Zone)"     as MinIO_Raw_Comp
+  component "PySpark Transformation Job"       as PySpark_Transform_Comp
+  database  "MinIO (Delta Lake Curated Zone)" as MinIO_Curated_Comp
+  database  "PostgreSQL"                      as PostgreSQL_DB_Comp
+  database  "MongoDB"                         as MongoDB_DB_Comp
+
+  Kafka_Topic_Comp --> Spark_Consumer_Comp      : Consume Stream
+  Spark_Consumer_Comp --> MinIO_Raw_Comp         : Write to Raw Zone
+  MinIO_Raw_Comp      --> PySpark_Transform_Comp : Read Raw Data
+  PySpark_Transform_Comp --> MinIO_Curated_Comp  : Cleanse & Model
+  PySpark_Transform_Comp <--> PostgreSQL_DB_Comp : Dimensional Data
+  PySpark_Transform_Comp <--> MongoDB_DB_Comp    : Semi‐Structured Data
+  MinIO_Curated_Comp  --> PySpark_Transform_Comp : Read Curated for Updates
+}
+
+' Analytics & Consumption
+package "Analytics & Consumption" {
+  component "Spark SQL / MLlib Analytics"      as Spark_Analytics_Comp
+  component "Business Users / Downstream Apps" as Consumers_Comp
+
+  MinIO_Curated_Comp --> Spark_Analytics_Comp : Query Curated Data
+  Spark_Analytics_Comp --> Consumers_Comp     : Insights / Reports
+}
+
+' Orchestration, Observability & Governance
+package "Orchestration, Observability & Governance" {
+  cloud     "Apache Airflow"                    as Airflow_Comp
+  component "OpenTelemetry"                     as OpenTelemetry_Comp
+  component "Grafana Alloy\n(Telemetry Collector)" as Grafana_Alloy_Comp
+  component "Grafana (Monitoring)"              as Grafana_Comp
+  component "Spline (Spark Lineage)"            as Spline_Comp
+  database  "OpenMetadata (Data Catalog)"       as OpenMetadata_Comp
+  component "cAdvisor (Container Metrics)"      as cAdvisor_Comp
+
+  Airflow_Comp                 --> PySpark_Transform_Comp   : Schedule & Execute Jobs
+  FastAPI_Ingestor_Comp        ..> OpenTelemetry_Comp      : Instrumented
+  Spark_Consumer_Comp          ..> OpenTelemetry_Comp      : Instrumented
+  PySpark_Transform_Comp       ..> OpenTelemetry_Comp      : Instrumented
+  Airflow_Comp                 ..> OpenTelemetry_Comp      : Instrumented
+  cAdvisor_Comp                --> Grafana_Alloy_Comp      : Collect Container Metrics
+  OpenTelemetry_Comp           --> Grafana_Alloy_Comp      : Traces/Metrics/Logs
+  Grafana_Alloy_Comp           --> Grafana_Comp            : Forward to Grafana
+  Grafana_Alloy_Comp           --> OpenMetadata_Comp       : Forward Metadata
+  PySpark_Transform_Comp       --> Spline_Comp             : Capture Lineage
+  Spline_Comp                  --> OpenMetadata_Comp       : Lineage Metadata
+  Airflow_Comp                 --> OpenMetadata_Comp       : Ingest Orchestration Metadata
+  OpenMetadata_Comp <-->       Grafana_Comp            : Metadata/Context Sharing
+  OpenMetadata_Comp <-->       "Analysts/Engineers"    : Data Discovery & Governance
+}
+
+@enduml

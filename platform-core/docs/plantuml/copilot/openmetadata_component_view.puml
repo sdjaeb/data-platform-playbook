@@ -1,0 +1,23 @@
+@startuml C4_Component "OpenMetadata Component View" "Internal modules of OpenMetadata Server"
+
+!define C4P https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master
+!include C4P/C4_Container.puml
+!include C4P/C4_Component.puml
+
+Container(openmeta, "OpenMetadata Server", "v1.3.1", "Metadata catalog & governance")
+
+Component(api,        "REST API",          "Spring Boot", "CRUD metadata entities")
+Component(ui,         "Web UI",            "React",       "User interface")
+Component(catalog,    "Catalog Service",   "Java",        "Business logic & validation")
+Component(ingestSvc,  "Ingestion Service", "Java",        "Runs metadata workflows")
+Component(search,     "Search Indexer",    "Opensearch","Indexes & queries metadata")
+Component(dbClient,   "MySQL Client",      "JDBC",        "Persists metadata")
+
+Rel(ui,      api,         "calls")
+Rel(api,     catalog,     "invokes business logic")
+Rel(catalog, dbClient,    "reads/writes metadata")
+Rel(catalog, search,      "index metadata")
+Rel(ingestSvc, api,       "push workflows")
+Rel(api,     ingestSvc,   "starts ingestion jobs")
+
+@enduml

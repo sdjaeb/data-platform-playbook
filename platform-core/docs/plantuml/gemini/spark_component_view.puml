@@ -1,0 +1,50 @@
+@startuml
+' Embedded C4-PlantUML definitions for offline/restricted environments
+!define C4_Context(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Container(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Component(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Context_Boundary(alias, label) rectangle alias as label {
+!define C4_Container_Boundary(alias, label) rectangle alias as label {
+!define C4_Component_Boundary(alias, label) rectangle alias as label {
+!define Person(alias, label, desc) actor alias as label desc
+!define System(alias, label, desc) rectangle alias as label <<System>> desc
+!define System_Ext(alias, label, desc) rectangle alias as label <<External System>> desc
+!define System_Boundary(alias, label) rectangle alias as label {
+!define Boundary_End }
+
+
+title Component Diagram: Apache Spark (Master/Worker)
+
+Container(spark_container, "Apache Spark Container", "JVM/Python (PySpark)", "The runtime environment for Spark applications (e.g., spark-master or spark-worker).") {
+
+  Component(spark_driver, "Spark Driver", "JVM Process", "Orchestrates Spark application, creates SparkSession.")
+  Component(spark_executors, "Spark Executor(s)", "JVM Process", "Executes tasks on worker nodes, processes data partitions.")
+
+  Component(spark_session, "SparkSession", "API/Runtime", "Unified entry point for Spark programming (batch, streaming, SQL).")
+  Component(delta_connector, "Delta Lake Connector", "Library", "Enables transactional reads/writes to Delta Lake tables.")
+  Component(kafka_connector, "Kafka Connector", "Library", "Facilitates consuming/producing data to Kafka topics.")
+  Component(jdbc_driver, "PostgreSQL JDBC Driver", "Library", "Enables connectivity to PostgreSQL database.")
+  Component(mongo_connector, "MongoDB Spark Connector", "Library", "Allows reading/writing data from/to MongoDB.")
+  Component(spline_agent, "Spline Agent", "Java Agent", "Intercepts Spark logical plans to capture lineage.")
+
+  Rel(spark_driver, spark_executors, "Distributes tasks to", "RPC")
+  Rel(spark_session, delta_connector, "Uses")
+  Rel(spark_session, kafka_connector, "Uses")
+  Rel(spark_session, jdbc_driver, "Uses")
+  Rel(spark_session, mongo_connector, "Uses")
+  Rel(spark_driver, spline_agent, "Leverages for lineage capture")
+}
+
+Container(minio, "MinIO", "Object Storage")
+Container(kafka, "Apache Kafka", "Streaming Platform")
+Container(postgres, "PostgreSQL", "Relational Database")
+Container(mongodb, "MongoDB", "NoSQL Database")
+Container(spline_rest, "Spline REST API", "Lineage Service")
+
+Rel(spark_container, minio, "Reads/Writes Delta Lake data")
+Rel(spark_container, kafka, "Consumes/Produces streaming data")
+Rel(spark_container, postgres, "Reads reference data")
+Rel(spark_container, mongodb, "Reads/Writes document data")
+Rel(spark_container, spline_rest, "Sends lineage events")
+
+@enduml

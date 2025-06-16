@@ -1,0 +1,21 @@
+@startuml C4_Component "Airflow Component View" "Internal modules of the Airflow Orchestrator"
+
+!define C4P https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master
+!include C4P/C4_Container.puml
+!include C4P/C4_Component.puml
+
+Container(airflow, "Airflow Orchestrator", "Airflow 2.6", "Schedules & runs data pipelines")
+
+Component(sched,   "Scheduler",    "core",      "Scans DAG folder & queues tasks")
+Component(websvr,  "Webserver",    "web",       "Serves the Airflow UI & API")
+Component(worker,  "Worker",       "celery",    "Executes task instances")
+Component(redis,   "Broker Client","redis-py",  "Pushes/Pulls Celery messages")
+Component(metaDB,  "Metadata Store","SQLAlchemy","Stores DAG/task state")
+
+Rel(websvr, sched, "REST/gRPC API calls")
+Rel(sched,  redis, "Enqueue tasks")
+Rel(worker, redis, "Consume tasks")
+Rel(worker, metaDB,"Read/Write state")
+Rel(websvr, metaDB,"Query DAG & task status")
+
+@enduml

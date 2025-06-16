@@ -1,0 +1,37 @@
+# openmetadata_ingestion_scripts/kafka_connector_config.yaml
+# This YAML configuration defines the workflow for ingesting metadata from Apache Kafka
+# into OpenMetadata. It specifies the Kafka source, connection details, and
+# how the metadata should be processed and reported.
+
+source:
+  type: kafka
+  serviceName: kafka_broker # Name of the Kafka service in OpenMetadata
+  serviceConnection:
+    config:
+      type: Kafka # Type of connection configuration
+      # IMPORTANT NOTE: 'kafka' is the service name defined in docker-compose.yml.
+      # This ensures internal Docker network communication.
+      bootstrapServers: kafka:29092
+  sourceConfig:
+    config:
+      type: Topic # Type of source config (Topic for Kafka)
+      # Optionally specify schema registry details if you use Avro/Protobuf
+      # schemaRegistry: http://schema-registry:8081 # If applicable
+      # schemaRegistryProtocol: http
+      # topicExcludePattern: .*_internal # Exclude internal Kafka topics
+      # topicIncludePattern: raw_.*|.*_transactions|.*_claims # Include specific topics
+processor:
+  type: om-metadata-processor
+  config: {} # No specific configuration needed for basic processing
+sink:
+  type: metadata-rest
+  config: {} # Default sink for sending metadata to OpenMetadata REST API
+workflowConfig:
+  # OpenMetadata server API endpoint. 'openmetadata-server' is the service name.
+  # IMPORTANT NOTE: For local setup, 'no-auth' is used. In production,
+  # you would typically use `authProvider: jwt` and `securityConfig: { jwtToken: "..." }`.
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585
+    authProvider: no-auth # For local setup without authentication
+    # securityConfig:
+    #   jwtToken: "your-jwt-token" # Use this if authentication is enabled

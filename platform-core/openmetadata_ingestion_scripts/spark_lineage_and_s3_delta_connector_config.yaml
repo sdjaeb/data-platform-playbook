@@ -1,0 +1,66 @@
+# openmetadata_ingestion_scripts/spark_lineage_and_s3_delta_connector_config.yaml
+# This is a combined workflow for the `full_pipeline_with_governance` DAG.
+# It ingests lineage from Spline (Spark lineage) and also scans S3 Delta Lake
+# tables to ensure the latest schemas and data assets are cataloged in OpenMetadata.
+
+source:
+  type: composite
+  processors:
+    - workflow:
+        name: spline_lineage_workflow # Workflow for Spline lineage
+        source:
+          type: spline
+          serviceName: spark_lineage_spline
+          serviceConnection:
+            config:
+              type: Spline
+              # IMPORTANT NOTE: The `spline-rest` service is mapped to port 8083 externally,
+              # but internally it listens on 8080. Use the internal port for inter-container communication.
+              hostPort: http://spline-rest:8080
+          sourceConfig:
+            config:
+              type: Lineage
+        processor:
+          type: om-lineage-processor
+          config: {}
+        sink:
+          type: metadata-rest
+          config: {}
+    - workflow:
+        name: s3_delta_workflow # Workflow for S3 Delta Lake tables
+        source:
+          type: s3
+          serviceName: minio_s3
+          serviceConnection:
+            config:
+              type: S3
+              awsConfig:
+                # IMPORTANT NOTE: 'minio' is the service name from docker-compose.
+                endPointURL: http://minio:9000
+                awsAccessKeyId: minioadmin
+                awsSecretAccessKey: minioadmin
+                region: us-east-1
+              storageConfig:
+                s3Config:
+                  # IMPORTANT NOTE: Adjust these bucket names if your Spark jobs write
+                  # to different buckets.
+                  bucketName:
+                    - curated-data-bucket # Ensure this bucket is scanned for curated data
+                    - raw-data-bucket # Also include raw if you want its metadata
+          sourceConfig:
+            config:
+              type: Storage
+              entityFilterPattern:
+                includes:
+                  - ".*"
+        processor:
+          type: om-metadata-processor
+          config: {}
+        sink:
+          type: metadata-rest
+          config: {}
+
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585
+    authProvider: no-auth

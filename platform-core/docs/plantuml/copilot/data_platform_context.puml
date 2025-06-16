@@ -1,0 +1,38 @@
+@startuml C4_Context "Data Platform Context" "High-level overview of actors and system"
+
+!define C4P https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master
+!include C4P/C4_Context.puml
+
+Person(dataProducer, "Data Producer", "Sends financial/insurance data via API or Webhook")
+Person(dataEngineer, "Data Engineer", "Builds pipelines, monitors jobs via UI dashboards")
+Person(dataScientist, "Data Scientist", "Explores data lineage & metadata for analysis")
+
+System_Boundary(dp, "Data Pipeline Platform") {
+  System(api,          "FastAPI Ingestor",        "Accepts raw data via REST, pushes to Kafka & stores in MinIO/Mongo")
+  System(webhook,      "Webhook Listener",        "Listens to MinIO events and triggers downstream jobs")
+  System(kafka,        "Kafka Cluster",           "Event bus for streaming data")
+  System(spark,        "Spark Cluster",           "Batch/stream processing of financial data")
+  System(airflow,      "Airflow Orchestrator",    "Schedules Spark jobs & metadata pipelines")
+  System(minio,        "MinIO Storage",           "Object store for raw/processed data")
+  System(mongo,        "MongoDB",                 "NoSQL store for ingested records")
+  System(postgres,     "Postgres (Metadata DB)",  "Relational store for pipeline metadata")
+  System(spline,       "Spline Data Lineage",     "Tracks lineage of Spark jobs")
+  System(openmeta,     "OpenMetadata",            "Metadata catalog & governance")
+  System(observability,"Observability Stack",     "cAdvisor, Prometheus, Grafana, Alloy")
+}
+
+Rel(dataProducer, api,          "POST /data")
+Rel(webhook,       kafka,        "Publish events")
+Rel(api,           kafka,        "Produce messages")
+Rel(kafka,         spark,        "Consume & process")
+Rel(spark,         minio,        "Write processed files")
+Rel(airflow,       spark,        "Trigger batch jobs")
+Rel(airflow,       openmeta,     "Catalog ingestion workflows")
+Rel(spark,         spline,       "Lineage reporting")
+Rel(observability, api,          "Scrape /health & /metrics")
+Rel(dataEngineer,  airflow,      "Uses UI")
+Rel(dataEngineer,  observability,"Monitors via Grafana UI")
+Rel(dataScientist, openmeta,     "Browse metadata")
+Rel(dataScientist, spline,       "View lineage")
+
+@enduml

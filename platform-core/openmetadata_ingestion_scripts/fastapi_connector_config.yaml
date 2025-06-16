@@ -1,0 +1,30 @@
+# openmetadata_ingestion_scripts/fastapi_connector_config.yaml
+# This YAML configuration defines the workflow for ingesting metadata about
+# FastAPI API endpoints into OpenMetadata. It uses the REST source connector
+# and points to FastAPI's OpenAPI (Swagger) documentation endpoint.
+
+source:
+  type: REST
+  serviceName: my_fastapi_service # Name of the FastAPI service in OpenMetadata
+  serviceConnection:
+    config:
+      type: RESTConnection # Type of connection configuration for REST APIs
+      # URL to FastAPI's OpenAPI (Swagger) JSON specification.
+      # IMPORTANT NOTE: 'fastapi_ingestor' is the service name in docker-compose.yml.
+      url: http://fastapi_ingestor:8000/openapi.json
+  sourceConfig:
+    config:
+      type: APIMetadata # Type of source config for API metadata
+      # apiFilterPattern:
+      #   includes:
+      #     - /ingest-financial-transaction.* # Include specific endpoints
+processor:
+  type: om-metadata-processor
+  config: {}
+sink:
+  type: metadata-rest
+  config: {}
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585
+    authProvider: no-auth

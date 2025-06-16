@@ -1,75 +1,129 @@
-# Description: Grafana Alloy configuration for telemetry collection.
-# Source: Highlighting Grafana Alloy (various use cases), Highlighting OpenTelemetry (various use cases),
-#         Highlighting cAdvisor (Basic Use Case).
-#
-# This file is a consolidation of various snippets for metrics, traces, and logs.
-# It assumes a Prometheus remote_write endpoint (Grafana), OTLP receiver,
-# and Prometheus scrape configs for cAdvisor.
+# observability/alloy-config.river
+# This file configures Grafana Alloy to act as a unified telemetry collector.
+# It receives metrics, logs, and traces via OTLP, scrapes Prometheus endpoints,
+# and forwards them to Grafana (acting as a Prometheus remote write endpoint)
+# and a conceptual Jaeger/Tempo for traces.
 
-# Configure Prometheus remote write to Grafana's Prometheus endpoint
+# --- 1. Define Remote Write Endpoint for Prometheus Metrics ---
+# This forwards all collected metrics to Grafana's Prometheus-compatible remote write endpoint.
 prometheus.remote_write "default" {
+  # The URL for Grafana's Prometheus remote write endpoint.
+  # 'grafana' is the service name defined in docker-compose.yml.
   url = "http://grafana:9090/api/prom/push"
+  # Authentication details could be added here if Grafana required them.
 }
 
-# Configure OTLP receiver for metrics, traces, and logs
-# This is where instrumented applications (like FastAPI) send their telemetry
+# --- 2. OTLP Receiver for Metrics, Traces, and Logs ---
+# This component listens for OpenTelemetry Protocol (OTLP) data over HTTP and gRPC.
+# Applications instrumented with OpenTelemetry (like FastAPI) will send their telemetry here.
 otelcol.receiver.otlp "default" {
-  http { } # Listen for OTLP HTTP (FastAPI uses this by default for OTLPMetricExporter/OTLPSpanExporter)
-  grpc { } # Listen for OTLP gRPC (if applications use gRPC exporter)
+  http { } # Enable HTTP endpoint for OTLP
+  grpc { } # Enable gRPC endpoint for OTLP
 
   output {
+    # Forward metrics received via OTLP to the 'default' Prometheus remote write.
     metrics = [prometheus.remote_write.default.receiver]
-    # For traces, you'd typically forward to a trace backend like Tempo or Jaeger.
-    # For local demo, we can send to a logging exporter for verification.
-    traces = [otelcol.exporter.logging.trace_logger.input] # Forward traces to logging exporter
-    # For logs, you'd typically forward to a log backend like Loki.
-    # For local demo, we can send to a logging exporter for verification.
-    logs = [otelcol.exporter.logging.log_printer.input] # Forward logs to logging exporter
+
+    # Forward traces received via OTLP to a conceptual OTLP exporter for Jaeger/Tempo.
+    # In a real setup, this would go to a distributed tracing backend (e.g., Jaeger, Tempo).
+    # For a local demo without a full Jaeger UI, you can uncomment otelcol.exporter.logging "trace_logger" below
+    # and direct traces there to see them in Alloy's logs.
+    traces = [] # [otelcol.exporter.otlp.jaeger_mock.input] # Uncomment for a real Jaeger/Tempo
+    # IMPORTANT NOTE: If you want to visualize traces in Jaeger, you'll need to set up a Jaeger instance
+    # (e.g., `jaeger-all-in-one` service in docker-compose.yml) and uncomment the
+    # `otelcol.exporter.otlp "jaeger_mock"` block below, and then change this line to
+    # `traces = [otelcol.exporter.otlp.jaeger_mock.input]`
+    # For now, traces are not being forwarded to any specific backend by default.
+    # If you just want to see trace details in Alloy's logs for debugging:
+    # traces = [otelcol.exporter.logging.trace_logger.input]
+
+    # Forward logs received via OTLP to a logging exporter (prints to Alloy's stdout)
+    # or to a log aggregation system like Loki.
+    logs = [otelcol.exporter.logging.log_printer.input]
   }
 }
 
-# Exporter to print traces to Alloy's stdout for debugging (Advanced Use Case 1 in OpenTelemetry)
-otelcol.exporter.logging "trace_logger" {
-  log_level = "debug"
-}
+# --- 3. Prometheus Scrapers ---
+# These components periodically scrape metrics from various service endpoints
+# that expose Prometheus-compatible metrics.
 
-# Exporter to print logs to Alloy's stdout for debugging (Advanced Use Case 2 in OpenTelemetry)
-otelcol.exporter.logging "log_printer" {
-  log_level = "debug"
-}
-
-# Prometheus scrape config for cAdvisor (Basic Use Case in cAdvisor)
-# Scrapes metrics from the cAdvisor container
-prometheus.scrape "cadvisor" {
-  targets    = [{"__address__" = "cadvisor:8080"}] # 'cadvisor' is the service name in docker-compose
+# Scrape metrics from the FastAPI ingestor.
+# FastAPI exposes metrics at /metrics endpoint if instrumented with FastAPIInstrumentor.
+prometheus.scrape "fastapi_ingestor_metrics" {
+  targets = [{"__address__" = "fastapi_ingestor:8000"}] # 'fastapi_ingestor' is service name
   forward_to = [prometheus.remote_write.default.receiver]
-  job        = "cadvisor" # Add a job name for better metric identification
+  job = "fastapi_ingestor"
+  scrape_interval = "15s" # How often to scrape
 }
 
-# Conceptual Prometheus scrape config for Node Exporter (if host metrics needed)
-# prometheus.scrape "node_exporter" {
-#   targets    = [{"__address__" = "host.docker.internal:9100"}] # Assumes node_exporter running on host
-#   forward_to = [prometheus.remote_write.default.receiver]
-#   job        = "node_exporter"
-# }
+# Scrape metrics from cAdvisor.
+# cAdvisor provides container resource usage metrics.
+prometheus.scrape "cadvisor_metrics" {
+  targets = [{"__address__" = "cadvisor:8080"}] # 'cadvisor' is service name
+  forward_to = [prometheus.remote_write.default.receiver]
+  job = "cadvisor"
+  scrape_interval = "15s"
+}
 
-# Example Prometheus scrape config for Kafka JMX Exporter (if enabled)
-# prometheus.scrape "kafka" {
-#   targets    = [{"__address__" = "kafka:7071"}] # Default JMX Exporter port on Kafka
-#   forward_to = [prometheus.remote_write.default.receiver]
-#   job        = "kafka"
-# }
+# (Conceptual) Scrape metrics from a PostgreSQL exporter.
+# IMPORTANT NOTE: To enable PostgreSQL monitoring in Grafana via Alloy,
+# you would typically add a `postgres_exporter` service to your `docker-compose.yml`
+# as a sidecar to the `postgres` service. Then, uncomment and configure this block.
+/*
+prometheus.scrape "postgres_db_metrics" {
+  targets = [{"__address__" = "postgres_exporter:9187"}] # 'postgres_exporter' is service name
+  forward_to = [prometheus.remote_write.default.receiver]
+  job = "postgres_db"
+  scrape_interval = "15s"
+}
+*/
 
-# Example Prometheus scrape config for Spark metrics (if enabled via Spark metrics.properties)
-# prometheus.scrape "spark_metrics" {
-#   targets    = [{"__address__" = "spark-master:8080"}] # Or specific Spark metrics endpoint
-#   forward_to = [prometheus.remote_write.default.receiver]
-#   job        = "spark"
-# }
+# --- 4. Exporters for Traces and Logs (Conceptual/Debugging) ---
 
-# Example Prometheus scrape config for Postgres Exporter (from PostgreSQL Highlights Adv Use Case 3 conceptual)
-# prometheus.scrape "postgres" {
-#   targets    = [{"__address__" = "postgres_exporter:9187"}]
-#   forward_to = [prometheus.remote_write.default.receiver]
-#   job        = "postgres_db"
-# }
+# (Conceptual) OTLP Exporter for Traces to an external Jaeger/Tempo instance.
+# IMPORTANT NOTE: If you decide to set up a Jaeger instance (e.g., `jaeger-all-in-one`
+# from a Jaeger Docker image), uncomment this block and ensure the `traces` output
+# in the `otelcol.receiver.otlp` section points to `otelcol.exporter.otlp.jaeger_mock.input`.
+/*
+otelcol.exporter.otlp "jaeger_mock" {
+  client {
+    endpoint = "http://jaeger-all-in-one:4318" # Jaeger's OTLP HTTP endpoint
+  }
+}
+*/
+
+# Exporter to print received traces to Alloy's standard output.
+# Useful for local debugging if a full trace backend is not set up.
+otelcol.exporter.logging "trace_logger" {
+  log_level = "debug" # Or "info"
+}
+
+# Exporter to print received logs to Alloy's standard output.
+# Useful for local debugging.
+otelcol.exporter.logging "log_printer" {
+  log_level = "debug" # Or "info"
+}
+
+# --- 5. Example: Static Scrape for Kafka (JMX Exporter) ---
+# To scrape Kafka metrics, you'd typically run a JMX Exporter as a sidecar to Kafka.
+# This is a conceptual configuration.
+/*
+prometheus.scrape "kafka_metrics" {
+  targets = [{"__address__" = "kafka-jmx-exporter:8080"}] # Assuming JMX exporter exposes metrics on 8080
+  forward_to = [prometheus.remote_write.default.receiver]
+  job = "kafka"
+  scrape_interval = "15s"
+}
+*/
+
+# --- 6. Example: Spark Metrics (Prometheus Spark Exporter) ---
+# Spark metrics can be exposed via a Prometheus Sink. If you had a Spark Prometheus Exporter,
+# you would configure scraping here.
+/*
+prometheus.scrape "spark_metrics" {
+  targets = [{"__address__" = "spark-master:8080"}] # Or specific workers if configured
+  forward_to = [prometheus.remote_write.default.receiver]
+  job = "spark"
+  scrape_interval = "15s"
+}
+*/

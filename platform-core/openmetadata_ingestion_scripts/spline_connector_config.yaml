@@ -1,0 +1,29 @@
+# openmetadata_ingestion_scripts/spline_connector_config.yaml
+# This YAML configuration defines the workflow for ingesting data lineage
+# from Spline (which captures Spark job lineage) into OpenMetadata.
+# OpenMetadata will pull execution details and graph information from Spline's API.
+
+source:
+  type: spline
+  serviceName: spark_lineage_spline # Name of the Spline service in OpenMetadata
+  serviceConnection:
+    config:
+      type: Spline # Type of connection configuration
+      # IMPORTANT NOTE: The `spline-rest` service is mapped to port 8083 externally,
+      # but internally it listens on 8080. Use the internal port for inter-container communication.
+      hostPort: http://spline-rest:8080
+  sourceConfig:
+    config:
+      type: Lineage # Type of source config (Lineage for Spline)
+      # start_date: "2023-01-01" # Optional: Only ingest lineage from this date onwards
+      # number_of_days: 7 # Optional: Ingest lineage for the last N days
+processor:
+  type: om-lineage-processor
+  config: {} # No specific configuration needed for basic lineage processing
+sink:
+  type: metadata-rest
+  config: {}
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585
+    authProvider: no-auth

@@ -1,0 +1,39 @@
+@startuml C4_Dynamic "Data Ingestion & Processing Flow" "Sequence of key interactions from ingest to catalog"
+
+// include C4 Dynamic macros
+!define C4P https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master
+!include C4P/C4_Dynamic.puml
+
+Actor(dataProducer, "Data Producer")
+Container(fastapi,       "FastAPI Ingestor",       "Python 3.9")
+Container(kafka,         "Kafka Broker",           "Confluent 7.0.1")
+Container(sparkMaster,   "Spark Master",           "Spark 3.3.2")
+Container(sparkWorker,   "Spark Worker",           "Spark 3.3.2")
+Container(minio,         "MinIO Storage",          "MinIO latest")
+Container(airflow,       "Airflow Orchestrator",   "Airflow 2.6")
+Container(openmeta,      "OpenMetadata Server",    "v1.3.1")
+
+Boundary(dp, “Data Platform”, <<Container>>) {
+}
+
+' 1) Ingest
+Step(dataProducer, fastapi,   "POST /data (JSON payload)")
+' 2) Produce to Kafka & persist raw
+Step(fastapi,     kafka,     "produce JSON→raw_topic")
+Step(fastapi,     minio,     "upload JSON→landing-zone bucket")
+Step(fastapi,     mongodb,   "insert record")
+
+' 3) Stream processing
+Step(kafka,       sparkMaster, "spark structured streaming consumer")
+Step(sparkMaster, sparkWorker, "dispatch tasks to executors")
+Step(sparkWorker, minio,       "write Parquet/Delta→processed bucket")
+
+' 4) Batch orchestration
+Step(airflow,     sparkMaster, "trigger batch jobs via CLI/API")
+Step(sparkMaster, sparkWorker, "execute batch jobs")
+
+' 5) Lineage & catalog
+Step(sparkMaster, openmeta,   "send lineage & metadata")
+Step(openmeta,    dataScientist, "UI: browse catalog")
+
+@enduml

@@ -1,0 +1,74 @@
+@startuml
+' Embedded C4-PlantUML definitions (basic definitions for sequence)
+!define C4_Context(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Container(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Component(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Context_Boundary(alias, label) rectangle alias as label {
+!define C4_Container_Boundary(alias, label) rectangle alias as label {
+!define C4_Component_Boundary(alias, label) rectangle alias as label {
+!define Person(alias, label, desc) actor alias as label desc
+!define System(alias, label, desc) rectangle alias as label <<System>> desc
+!define System_Ext(alias, label, desc) rectangle alias as label <<External System>> desc
+!define System_Boundary(alias, label) rectangle alias as label {
+!define Boundary_End }
+
+autonumber
+actor "External Source" as ES
+participant "FastAPI Ingestor" as FI
+participant "Apache Kafka" as K
+participant "Spark Streaming Consumer" as SSC
+participant "MinIO (Raw Zone)" as MRZ
+participant "Spark Batch Transformation" as SBT
+participant "PostgreSQL (Reference Data)" as PG
+participant "MinIO (Curated Zone)" as MCZ
+participant "Spline REST API" as SR
+participant "Airflow Scheduler" as AS
+participant "OpenMetadata Ingestion" as OMI
+participant "OpenMetadata Server" as OMS
+
+title Financial Transaction Lifecycle: Ingestion to Curated Storage
+
+ES -> FI: POST /ingest-financial-transaction/ (JSON Payload)
+activate FI
+FI -> FI: Validate schema (Pydantic)
+FI -> K: Publish financial_transaction to "raw_financial_transactions" topic
+activate K
+deactivate FI
+
+K --> SSC: Consumer Group Reads New Message
+activate SSC
+SSC -> SSC: Deserialize JSON and apply schema
+SSC -> SSC: Add processing_timestamp
+SSC -> MRZ: Appends processed data to "financial_data_delta" table (Delta Lake)
+activate MRZ
+deactivate SSC
+
+MRZ --> AS: (Conceptual) Data arrival signal / Scheduled trigger
+deactivate MRZ
+
+AS -> SBT: Triggers "Batch ETL Transformation" Spark job (e.g., daily)
+activate SBT
+SBT -> MRZ: Reads raw "financial_data_delta" (Delta Lake)
+SBT -> PG: Reads "merchant_lookup" reference data (JDBC)
+activate PG
+deactivate PG
+SBT -> SBT: Joins, transforms, enriches data
+SBT -> MCZ: Overwrites/appends curated data to "financial_data_curated_full_pipeline" table (Delta Lake)
+activate MCZ
+SBT -> SR: Reports Spark job lineage details
+deactivate SBT
+deactivate MCZ
+
+AS -> OMI: Triggers OpenMetadata ingestion for Spark lineage and S3 Delta Lake
+activate OMI
+OMI -> SR: Queries for recent Spark lineage
+OMI -> MRZ: Scans "raw-data-bucket" for metadata/schema
+OMI -> MCZ: Scans "curated-data-bucket" for metadata/schema
+OMI -> OMS: Pushes updated metadata (schemas, lineage graph)
+activate OMS
+deactivate OMI
+deactivate OMS
+
+deactivate AS
+
+@enduml

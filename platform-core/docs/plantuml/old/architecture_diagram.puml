@@ -1,0 +1,46 @@
+@startuml
+!theme toy
+skinparam sequence {
+    ArrowColor #A80036
+    ActorBorderColor #A80036
+    LifeLineBorderColor #A80036
+    LifeLineBackgroundColor #F8F8F8
+    ParticipantBorderColor #A80036
+    ParticipantBackgroundColor #F8F8F8
+    ParticipantFontName Arial
+    ParticipantFontSize 12
+    ParticipantFontColor #A80036
+    ActorBackgroundColor #F8F8F8
+    ActorFontName Arial
+    ActorFontSize 12
+    ActorFontColor #A80036
+}
+
+title API Consumption Flow
+
+actor "Mobile App\n(e.g., Banking App)" as MobileApp
+actor "Internal System\n(e.g., Claims Processing)" as InternalSystem
+
+participant "FastAPI Ingestor\n(API Gateway/Load Balancer)" as FastAPI
+
+box "Data Platform"
+    participant "Kafka Topic\n(Raw Data)" as KafkaTopic
+    participant "Spark Structured Streaming\n(Kafka Consumer)" as SparkConsumer
+    database "Delta Lake\n(Raw Zone)" as DeltaLakeRaw
+end box
+
+MobileApp -> FastAPI : POST /ingest-financial-transaction (JSON)
+activate FastAPI
+FastAPI -> KafkaTopic : Produce message (FinancialTransaction)
+deactivate FastAPI
+
+InternalSystem -> FastAPI : POST /ingest-insurance-claim (JSON)
+activate FastAPI
+FastAPI -> KafkaTopic : Produce message (InsuranceClaim)
+deactivate FastAPI
+
+KafkaTopic -> SparkConsumer : Stream Data
+activate SparkConsumer
+SparkConsumer -> DeltaLakeRaw : Write to Delta (Parquet)
+deactivate SparkConsumer
+@enduml

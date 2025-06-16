@@ -1,0 +1,64 @@
+@startuml C4_Container "Data Pipeline Container View" "Docker compose containers & networks"
+
+!define C4P https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master
+!include C4P/C4_Container.puml
+
+System_Boundary(dp, "Data Pipeline Platform") {
+  Container(postgres,      "Postgres",          "PostgreSQL 14\nmain_db",       "Metadata database")  
+  Container(mongo,         "MongoDB",           "Mongo 6.0.4\nrs0",               "NoSQL store for raw records")
+  Container(minio,         "MinIO",             "MinIO latest",                  "Object storage for data lake")
+  Container(kafka,         "Kafka",             "Confluent 7.0.1",               "Event bus")
+  Container(zookeeper,     "Zookeeper",         "Confluent 7.0.1",               "Kafka coordination")
+  Container(fastapi,       "FastAPI Ingestor",  "Python 3.9",                    "API → Kafka, MinIO, Mongo")
+  Container(webhook,       "Webhook Listener",  "Node.js 16",                    "MinIO event handler")
+  Container(sparkMaster,   "Spark Master",      "Spark 3.3.2",                   "Driver & master UI")
+  Container(sparkWorker1,  "Spark Worker",      "Spark 3.3.2",                   "Executor")
+  Container(sparkHistory,  "Spark History",     "Spark 3.3.2",                   "Job history UI")
+  
+  Container(airflowSched,  "Airflow Scheduler", "Airflow 2.6",                   "Dag scheduling")
+  Container(airflowWeb,    "Airflow Webserver", "Airflow 2.6",                   "UI")
+  Container(airflowWorker, "Airflow Worker",    "Airflow 2.6",                   "Executes tasks")
+  Container(airflowInit,   "Airflow Init Job",  "Airflow 2.6",                   "DB migration & users")
+
+  Container(redis,         "Redis",             "Redis 6.2",                     "Celery broker")
+  Container(splineRest,    "Spline REST",       "0.7.1",                         "Lineage API")
+  Container(splineUi,      "Spline UI",         "0.7.1",                         "Lineage dashboard")
+  
+  Container(openmetaDb,    "OpenMetadata MySQL","MySQL 8.0",                     "Metadata catalog DB")
+  Container(openmetaEs,    "OpenMetadata ES",   "OpenSearch 2.5.0",              "Search index")
+  Container(openmetaSrv,   "OpenMetadata Server","OpenMetadata 1.3",              "Catalog API & UI")
+  Container(openmetaIngest,"OpenMetadata Ingest","Ingestion base 1.3",            "Bulk metadata loader")
+
+  Container(cadvisor,      "cAdvisor",          "v0.47.0",                       "Container metrics")
+  Container(prometheus,    "Prometheus",        "v2.42.0",                       "Metrics store")
+  Container(alloy,         "Grafana Alloy",     "0.5.0",                         "OTLP endpoint")
+  Container(grafana,       "Grafana",           "10.2.3",                        "Dashboard UI")
+}
+
+Rel(fastapi,    kafka,        "Produce JSON events",             "PLAINTEXT")
+Rel(fastapi,    minio,        "Store raw objects",               "S3 API")
+Rel(fastapi,    mongo,        "Persist records",                 "Mongo API")
+Rel(webhook,    kafka,        "Publish events",                  "PLAINTEXT")
+Rel(airflowSched, kafka,      "Optional kafka tasks",            "PLAINTEXT")
+Rel(airflowSched, redis,      "Broker",                          "Redis protocol")
+Rel(airflowWorker, redis,     "Broker",                          "Redis protocol")
+Rel(airflowWorker, airflowSched, "Receives tasks",               "gRPC")
+
+Rel(kafka,      sparkMaster,  "Spark Structured Streaming",      "PLAINTEXT")
+Rel(sparkMaster,sparkWorker1, "Distributes tasks",              "Spark RPC")
+Rel(sparkWorker1,minio,       "Write parquet/Delta",             "S3 API")
+Rel(sparkMaster,minio,        "Write checkpoint",                "S3 API")
+
+Rel(sparkHistory,sparkMaster,"Read event logs",                 "HTTP")
+Rel(sparkHistory,minio,      "Read /events",                   "File")
+
+Rel(airflowWeb, dataEngineer, "UI")
+Rel(grafana,     dataEngineer,"UI")
+Rel(splineUi,    dataScientist,"UI")
+Rel(openmetaSrv,dataScientist,"UI")
+
+Rel_L(cadvisor, prometheus,   "Expose metrics",                 "HTTP")
+Rel_L(alloy,     prometheus,   "OTLP → Prometheus remote write","HTTP")
+Rel_L(prometheus,grafana,     "Visualize metrics",             "HTTP")
+
+@enduml

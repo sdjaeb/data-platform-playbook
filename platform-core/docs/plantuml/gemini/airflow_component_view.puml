@@ -1,0 +1,47 @@
+@startuml
+' Embedded C4-PlantUML definitions for offline/restricted environments
+!define C4_Context(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Container(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Component(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Context_Boundary(alias, label) rectangle alias as label {
+!define C4_Container_Boundary(alias, label) rectangle alias as label {
+!define C4_Component_Boundary(alias, label) rectangle alias as label {
+!define Person(alias, label, desc) actor alias as label desc
+!define System(alias, label, desc) rectangle alias as label <<System>> desc
+!define System_Ext(alias, label, desc) rectangle alias as label <<External System>> desc
+!define System_Boundary(alias, label) rectangle alias as label {
+!define Boundary_End }
+
+
+title Component Diagram: Apache Airflow
+
+Container(airflow_container, "Apache Airflow", "Python", "The platform for programmatically authoring, scheduling, and monitoring workflows.") {
+
+  Component(scheduler, "Scheduler", "Python Process", "Monitors DAGs and triggers tasks based on their schedule and dependencies.")
+  Component(webserver, "Webserver", "Python Process (Gunicorn/Flask)", "Serves the Airflow UI for managing and monitoring DAGs and tasks.")
+  Component(dag_processor, "DAG Processor", "Python Process", "Parses DAG files, loads them into the metastore.")
+  Component(local_executor, "Local Executor", "Python Process", "Executes tasks locally within the scheduler's process (for local dev).")
+  ' For other executors:
+  ' Component(celery_executor, "Celery Executor", "Python Worker Pool", "Sends tasks to Celery workers for execution.")
+  ' Component(kubernetes_executor, "Kubernetes Executor", "Python/Kubernetes API", "Launches a new Pod for each task instance.")
+
+  Component(metastore, "Metastore Database", "PostgreSQL", "Stores DAG definitions, task states, connections, variables, and historical runs.")
+
+  Rel(scheduler, metastore, "Reads/Writes DAG state/metadata", "SQL/JDBC")
+  Rel(webserver, metastore, "Reads DAG/task data for UI", "SQL/JDBC")
+  Rel(dag_processor, metastore, "Writes parsed DAGs", "SQL/JDBC")
+  Rel(scheduler, local_executor, "Submits tasks to")
+  Rel(webserver, local_executor, "Retrieves task logs from")
+  ' Rel(scheduler, celery_executor, "Submits tasks to")
+  ' Rel(scheduler, kubernetes_executor, "Submits tasks to")
+}
+
+Container(postgres, "PostgreSQL", "Relational Database", "Airflow's external metastore.")
+Container(spark_master, "Spark Master", "Apache Spark", "Executes jobs triggered by Airflow.")
+Container(openmetadata_ingestion, "OpenMetadata Ingestion", "Python", "Runs metadata workflows triggered by Airflow.")
+
+Rel(airflow_container, postgres, "Connects to", "JDBC")
+Rel(airflow_container, spark_master, "Triggers/Monitors", "Docker exec/HTTP")
+Rel(airflow_container, openmetadata_ingestion, "Triggers", "Docker exec")
+
+@enduml

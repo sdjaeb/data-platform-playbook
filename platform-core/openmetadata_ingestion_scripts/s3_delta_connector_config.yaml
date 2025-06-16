@@ -1,0 +1,60 @@
+# openmetadata_ingestion_scripts/s3_delta_connector_config.yaml
+# This YAML configuration defines the workflow for ingesting metadata from Delta Lake
+# tables stored in MinIO (S3-compatible object storage) into OpenMetadata.
+# It uses the S3 source connector configured for Delta Lake format.
+
+source:
+  type: s3
+  serviceName: minio_s3 # Name of the S3 service in OpenMetadata (can be 'minio_data_lake')
+  serviceConnection:
+    config:
+      type: S3 # Type of connection configuration
+      awsConfig:
+        # MinIO S3-compatible endpoint details
+        # IMPORTANT NOTE: 'minio' is the service name from docker-compose.
+        endPointURL: http://minio:9000
+        awsAccessKeyId: minioadmin # MinIO root user
+        awsSecretAccessKey: minioadmin # MinIO root password
+        region: us-east-1 # Arbitrary region for local MinIO
+      # Delta Lake format specifics
+      storageConfig:
+        s3Config:
+          # Specify the buckets where your Delta Lake tables are stored.
+          # IMPORTANT NOTE: Adjust these bucket names if your Spark jobs write
+          # to different buckets.
+          bucketName:
+            - raw-data-bucket
+            - curated-data-bucket
+  sourceConfig:
+    config:
+      type: Storage # Type of source config (Storage for S3)
+      resultLimit: 1000 # Limit number of entities
+      # Include/Exclude patterns for paths or object keys.
+      # This will pick up Delta Lake tables within the specified buckets.
+      entityFilterPattern:
+        includes:
+          - ".*" # Include all entities/folders within the specified buckets
+        # excludes:
+        #   - ".*_checkpoint.*" # Exclude checkpoint directories
+      # Specify file formats to consider for metadata extraction
+      # For Delta Lake, OpenMetadata understands the _delta_log structure
+      # If you want to profile or sample data, make sure appropriate formats are included
+      # For Delta Lake, it will infer from the _delta_log
+      # fileFormat:
+      #   - "parquet"
+      #   - "delta"
+      # For profiling:
+      # enableDataProfiler: True
+      # dataProfilerConfig:
+      #   samplingPercent: 10
+      #   timeoutSeconds: 3600
+processor:
+  type: om-metadata-processor
+  config: {}
+sink:
+  type: metadata-rest
+  config: {}
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585
+    authProvider: no-auth

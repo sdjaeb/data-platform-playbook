@@ -1,0 +1,69 @@
+@startuml
+!theme toy
+skinparam componentStyle uml2
+
+' Define Actors/External Systems
+actor "Disparate Data Sources\n(e.g., Financial, Insurance Systems)" as data_sources
+
+' Define Layers/Zones
+rectangle "Ingestion Layer" {
+    component "FastAPI Ingestor" as fastapi_ingestor
+    queue     "Apache Kafka\n(Raw Data Topic)"       as kafka_topic
+}
+
+rectangle "Processing Layer" {
+    component "Apache Spark Cluster"                 as spark_cluster
+    rectangle "Spark Structured Streaming\n(Raw Data Consumer)" as spark_raw_consumer
+    rectangle "PySpark Transformation Job\n(ELT/Batch)"       as spark_transform
+    spark_cluster -- spark_raw_consumer
+    spark_cluster -- spark_transform
+}
+
+rectangle "Storage Layer (Data Lakehouse)" {
+    database "MinIO (S3 Compatible)\n(Delta Lake Raw Zone)"     as minio_raw
+    database "MinIO (S3 Compatible)\n(Delta Lake Curated Zone)" as minio_curated
+    database "PostgreSQL\n(Structured Data/Metadata)"           as postgres_db
+    database "MongoDB\n(Semi-Structured Data)"                  as mongodb_db
+    minio_raw <--> minio_curated : "Delta Lake"
+}
+
+rectangle "Orchestration & Governance Layer" {
+    cloud     "Apache Airflow"                 as airflow
+    component "OpenTelemetry"                  as opentelemetry
+    component "Grafana Alloy\n(OTLP Collector)" as grafana_alloy
+    database  "OpenMetadata\n(Data Catalog)"   as openmetadata
+    component "Spline\n(Spark Lineage)"        as spline
+    component "Grafana\n(Monitoring & Visualization)" as grafana
+    component "cAdvisor\n(Container Metrics)" as cadvisor
+}
+
+rectangle "Analytical Layer" {
+    component "Spark SQL / MLlib Analytics"   as spark_analytics
+}
+
+' ─── Data Flow ───────────────────────────────────────────────
+data_sources           --> fastapi_ingestor : "Send Data (HTTP/S)"
+fastapi_ingestor       --> kafka_topic       : "Publish Data (JSON/Protobuf)"
+kafka_topic            --> spark_raw_consumer : "Consume Stream"
+spark_raw_consumer     --> minio_raw          : "Write to Raw Zone"
+minio_raw              --> spark_transform    : "Read Raw Data"
+spark_transform        --> minio_curated      : "Write Curated Data (MERGE)"
+minio_curated          --> spark_analytics    : "Query for Analytics"
+postgres_db            <--> spark_transform  : "Dim Data / Metadata"
+mongodb_db             <--> spark_transform  : "Semi-Structured Data"
+spark_analytics        --> data_sources      : "Insights/Reports"
+
+' ─── Observability Flow ──────────────────────────────────────
+opentelemetry          --> grafana_alloy     : "Telemetry Data (Traces, Metrics, Logs)"
+fastapi_ingestor       ..> opentelemetry     : "Instrumented"
+spark_cluster          ..> opentelemetry     : "Instrumented"
+airflow                ..> opentelemetry     : "Instrumented"
+cadvisor               --> grafana_alloy     : "Container Metrics"
+grafana_alloy          --> grafana           : "Forward to Grafana"
+grafana_alloy          --> openmetadata      : "Forward Metadata/Telemetry"
+spark_cluster          --> spline            : "Capture Lineage"
+spline                 --> openmetadata      : "Send Lineage Metadata"
+airflow                --> spark_cluster     : "Orchestrate Jobs"
+airflow                --> openmetadata      : "Orchestrate Metadata Ingestion"
+openmetadata           <--> grafana          : "Share Metadata/Context"
+@enduml

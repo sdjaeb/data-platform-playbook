@@ -1,0 +1,40 @@
+# openmetadata_ingestion_scripts/postgres_connector_config.yaml
+# This YAML configuration defines the workflow for ingesting metadata from PostgreSQL
+# into OpenMetadata. It's configured to connect to the 'starter_db' database
+# which serves as the Airflow metastore and can hold application metadata.
+
+source:
+  type: postgres
+  serviceName: my_postgres_db # Name of the PostgreSQL service in OpenMetadata
+  serviceConnection:
+    config:
+      type: PostgreSQL # Type of connection configuration
+      username: user # PostgreSQL user from docker-compose
+      password: password # PostgreSQL password from docker-compose
+      # IMPORTANT NOTE: 'postgres' is the service name from docker-compose.
+      hostPort: postgres:5432
+      database: starter_db # Database name from docker-compose (Airflow metastore)
+  sourceConfig:
+    config:
+      type: DatabaseMetadata # Type of source config (DatabaseMetadata for RDBMS)
+      schemaFilterPattern:
+        # Include only schemas relevant to Airflow or your application data
+        # For Airflow, it's typically 'public' or whatever schema Airflow tables are in.
+        # OpenMetadata also has specific Airflow connector for scheduler/DAG info.
+        includes:
+          - public # Default schema where tables like 'app_configs' or Airflow tables reside
+      # tableFilterPattern:
+      #   includes:
+      #     - airflow_.* # Include all Airflow related tables
+      #     - app_configs # Your custom app config table
+      #     - merchant_lookup # Reference data table
+processor:
+  type: om-metadata-processor
+  config: {}
+sink:
+  type: metadata-rest
+  config: {}
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: http://openmetadata-server:8585
+    authProvider: no-auth

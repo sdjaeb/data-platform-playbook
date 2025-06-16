@@ -1,0 +1,65 @@
+@startuml
+' Embedded C4-PlantUML definitions for offline/restricted environments
+!define C4_Context(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Container(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Component(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Context_Boundary(alias, label) rectangle alias as label {
+!define C4_Container_Boundary(alias, label) rectangle alias as label {
+!define C4_Component_Boundary(alias, label) rectangle alias as label {
+!define Person(alias, label, desc) actor alias as label desc
+!define System(alias, label, desc) rectangle alias as label <<System>> desc
+!define System_Ext(alias, label, desc) rectangle alias as label <<External System>> desc
+!define System_Boundary(alias, label) rectangle alias as label {
+!define Boundary_End }
+
+
+title Component Diagram: OpenMetadata
+
+Container(openmetadata_server_container, "OpenMetadata Server", "Java (Spring Boot)", "The core application serving the UI and REST API.") {
+  Component(ui, "Web UI", "React.js", "Provides interactive data catalog, lineage, and governance interface.")
+  Component(rest_api, "REST API", "HTTP/JSON", "Interfaces for data ingestion, discovery, and management.")
+  Component(service_manager, "Service Manager", "Backend Logic", "Manages connections to data sources and metadata services.")
+
+  Component(mysql_storage, "Catalog Metadata DB", "MySQL", "Stores core metadata entities (tables, topics, services, users).")
+  Component(elasticsearch_index, "Search & Index", "OpenSearch/Elasticsearch", "Provides fast, searchable index for data assets.")
+
+  Rel(ui, rest_api, "Communicates with", "HTTP/REST")
+  Rel(rest_api, service_manager, "Invokes")
+  Rel(service_manager, mysql_storage, "Persists/Retrieves metadata", "JDBC")
+  Rel(service_manager, elasticsearch_index, "Indexes metadata", "Elasticsearch API")
+}
+
+Container(openmetadata_ingestion_container, "OpenMetadata Ingestion", "Python", "Runs metadata collection workflows.") {
+  Component(ingestion_framework, "Ingestion Framework", "Python CLI/SDK", "Manages execution of various metadata connectors.")
+  Component(kafka_connector, "Kafka Connector", "Python", "Extracts metadata from Kafka.")
+  Component(s3_connector, "S3 Connector", "Python", "Extracts metadata from S3/Delta Lake.")
+  Component(postgres_connector, "PostgreSQL Connector", "Python", "Extracts metadata from PostgreSQL.")
+  Component(spline_connector, "Spline Connector", "Python", "Extracts lineage from Spline.")
+  Component(rest_api_connector, "REST API Connector", "Python", "Extracts metadata from OpenAPI endpoints (FastAPI).")
+  Component(mongodb_connector, "MongoDB Connector", "Python", "Extracts metadata from MongoDB.")
+
+  Rel(ingestion_framework, kafka_connector, "Executes")
+  Rel(ingestion_framework, s3_connector, "Executes")
+  Rel(ingestion_framework, postgres_connector, "Executes")
+  Rel(ingestion_framework, spline_connector, "Executes")
+  Rel(ingestion_framework, rest_api_connector, "Executes")
+  Rel(ingestion_framework, mongodb_connector, "Executes")
+
+  Rel(ingestion_framework, rest_api, "Pushes metadata to", "OpenMetadata REST API")
+}
+
+Container(kafka, "Apache Kafka", "Streaming Platform")
+Container(minio, "MinIO", "Object Storage")
+Container(postgres, "PostgreSQL", "Relational DB")
+Container(spline_rest, "Spline REST API", "Lineage Service")
+Container(fastapi_ingestor, "FastAPI Ingestor", "API Service")
+Container(mongodb, "MongoDB", "NoSQL DB")
+
+Rel(kafka_connector, kafka, "Connects to")
+Rel(s3_connector, minio, "Connects to")
+Rel(postgres_connector, postgres, "Connects to")
+Rel(spline_connector, spline_rest, "Connects to")
+Rel(rest_api_connector, fastapi_ingestor, "Connects to")
+Rel(mongodb_connector, mongodb, "Connects to")
+
+@enduml

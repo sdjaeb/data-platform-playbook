@@ -1,0 +1,48 @@
+@startuml C4_Deployment "Deployment View" "Hosts, networks, volumes and where containers live"
+
+!define C4P https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master
+!include C4P/C4_Deployment.puml
+
+Deployment_Node(host1, "Docker Host A", "Linux VM") {
+  Container(pgres,    "postgres:14",           "Postgres")  
+  Container(zoo,      "cp-zookeeper:7.0.1",    "Zookeeper")
+  Container(kfk,      "cp-kafka:7.0.1",        "Kafka Broker")
+  Container(minio,    "minio/minio",           "MinIO Storage")
+  Container(mongo,    "mongo:6.0.4",           "MongoDB rs0")
+}
+
+Deployment_Node(host2, "Docker Host B", "Linux VM") {
+  Container(smaster,  "bitnami/spark:3.3.2",    "Spark Master")
+  Container(sworker,  "bitnami/spark:3.3.2",    "Spark Worker")
+  Container(hist,     "bitnami/spark:3.3.2",    "Spark History")
+}
+
+Deployment_Node(host3, "Docker Host C", "Linux VM") {
+  Container(airflow,  "apache/airflow:2.6.3",   "Scheduler/Web/Worker")
+  Container(redis,    "redis:6.2-alpine",       "Redis Broker")
+}
+
+Deployment_Node(host4, "Docker Host D", "Linux VM") {
+  Container(splineR,  "absaoss/spline-rest:0.7.1","Spline REST")
+  Container(splineU,  "absaoss/spline-ui:0.7.1",  "Spline UI")
+  Container(openDB,   "mysql:8.0",              "OpenMetadata MySQL")
+  Container(openES,   "opensearch:2.5.0",        "OpenSearch")
+  Container(openSrv,  "openmetadata:1.3.1",      "OpenMetadata Server")
+  Container(openIng,  "openmetadata-ingestion",  "Ingestion Jobs")
+  Container(webhook,  "node:16-alpine",          "Webhook Listener")
+}
+
+Deployment_Node(host5, "Docker Host E", "Linux VM") {
+  Container(cad,      "gcr.io/cadvisor:v0.47.0", "cAdvisor")
+  Container(prom,     "prom/prometheus:v2.42.0", "Prometheus")
+  Container(alloy,    "grafana/alloy:0.5.0",     "Grafana Alloy")
+  Container(graf,     "grafana/grafana:10.2.3",  "Grafana UI")
+}
+
+Rel(host1, host2, "Spark reads from Kafka & writes to MinIO")
+Rel(host3, host4, "Airflow writes lineage to OpenMetadata")
+Rel(prom, graf,   "scrapes metrics")
+Rel(alloy, prom,  "OTLP → remote_write")
+Rel(webhook, minio,"listens events")
+
+@enduml

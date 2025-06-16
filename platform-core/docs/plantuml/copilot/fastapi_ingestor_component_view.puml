@@ -1,0 +1,20 @@
+@startuml C4_Component "FastAPI Ingestor Component View" "Internal modules of the FastAPI service"
+
+!define C4P https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master
+!include C4P/C4_Container.puml
+!include C4P/C4_Component.puml
+
+Container(fastapi, "FastAPI Ingestor", "Python 3.9", "Accepts and routes incoming data")
+
+Component(apiHandler,    "API Handler",    "FastAPI Endpoints",    "Validates & parses HTTP JSON")
+Component(eventProducer,"Kafka Producer","Confluent Kafka Client","Sends messages to 'raw_financial_insurance_data'")
+Component(objectWriter, "MinIO Client",  "MinIO SDK",            "Uploads JSON/PARQUET to buckets")
+Component(recordStore,  "Mongo Client",   "PyMongo",              "Inserts documents")
+Component(health,       "Health Probe",   "FastAPI Route",        "Exposes /health HTTP endpoint")
+
+Rel(apiHandler, eventProducer, "POST JSON → Kafka")
+Rel(apiHandler, objectWriter,  "POST JSON → MinIO")
+Rel(apiHandler, recordStore,   "Save metadata → MongoDB")
+Rel(health,     apiHandler,    "PING")
+
+@enduml

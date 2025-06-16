@@ -1,108 +1,133 @@
-# Description: Conceptual GitHub Actions Release Workflow for CI/CD.
-# Source: Building Enterprise-Ready Data Platforms v2.4, Section 5.3 CI/CD.
-#
-# This workflow demonstrates building, publishing, testing on staging, and conditionally promoting to production.
+# .github/workflows/release.yml
+# This is a conceptual GitHub Actions workflow for a release pipeline.
+# It automates building Docker images, pushing them to a registry (e.g., Docker Hub or ECR),
+# deploying infrastructure and applications to a staging environment using Terraform,
+# running smoke tests on staging, and then, upon manual approval, promoting to production.
+
 name: Release Pipeline
+
+# This workflow can be triggered on pushes to a 'release' branch,
+# or manually via the GitHub UI with specified inputs.
 on:
   push:
     branches:
-      - release # Trigger on pushes to a 'release' branch, or tag pushes
+      - release # Trigger on pushes to a 'release' branch
   workflow_dispatch: # Allows manual trigger from GitHub UI
     inputs:
       version:
         description: 'Release Version (e.g., v1.0.0)'
         required: true
+        default: 'latest' # Default value for manual trigger
 
 jobs:
+  # Job to build and publish Docker images for FastAPI and PySpark jobs.
   build-and-publish-images:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Runner environment for the job
+    # Outputs of this job, which can be consumed by downstream jobs.
     outputs:
-      fastapi_image: ${{ steps.build_fastapi.outputs.image_name }}
-      pyspark_image: ${{ steps.build_pyspark.outputs.image_name }}
+      fastapi_image_tag: ${{ steps.build_fastapi.outputs.image_tag }}
+      pyspark_image_tag: ${{ steps.build_pyspark.outputs.image_tag }}
+
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v3 # Action to check out the repository code
+
     - name: Set up Docker BuildX
-      uses: docker/setup-buildx-action@v2
+      uses: docker/setup-buildx-action@v2 # Action for advanced Docker builds
+
     - name: Log in to Docker Hub (or ECR)
       uses: docker/login-action@v2
       with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_TOKEN }}
-        # For ECR: registry: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+        username: ${{ secrets.DOCKER_USERNAME }} # GitHub secret for Docker Hub username
+        password: ${{ secrets.DOCKER_TOKEN }}   # GitHub secret for Docker Hub access token
+        # For AWS ECR:
+        # registry: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+    - name: Get Git SHA for image tag
+      id: git_sha
+      run: echo "::set-output name=sha_tag::$(echo ${GITHUB_SHA} | cut -c1-7)" # Use short SHA for image tag
 
     - name: Build and push FastAPI Ingestor image
       id: build_fastapi
       uses: docker/build-push-action@v4
       with:
-        context: ./fastapi_app
-        push: true
-        tags: yourusername/fastapi-ingestor:${{ github.sha }} # Use Git SHA for unique tag
-        # For ECR: tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/fastapi-ingestor:${{ github.sha }}
-        outputs: type=string,name=image_name
+        context: ./fastapi_app # Path to the FastAPI application's Dockerfile context
+        push: true             # Push the built image to the registry
+        tags: yourusername/fastapi-ingestor:${{ steps.git_sha.outputs.sha_tag }} # Tag with short Git SHA
+        # For AWS ECR:
+        # tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/fastapi-ingestor:${{ steps.git_sha.outputs.sha_tag }}
+        outputs: type=string,name=image_tag # Output the image tag for downstream jobs
 
     - name: Build and push PySpark Job image (base for running jobs)
       id: build_pyspark
       uses: docker/build-push-action@v4
       with:
-        context: ./pyspark_jobs # Assuming a Dockerfile here for PySpark environment
+        context: ./pyspark_jobs # Assuming a Dockerfile exists here for the PySpark environment
         push: true
-        tags: yourusername/pyspark-job-runner:${{ github.sha }}
-        outputs: type=string,name=image_name
+        tags: yourusername/pyspark-job-runner:${{ steps.git_sha.outputs.sha_tag }}
+        # For AWS ECR:
+        # tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/pyspark-job-runner:${{ steps.git_sha.outputs.sha_tag }}
+        outputs: type=string,name=image_tag
 
+  # Job to deploy the built images and infrastructure to the staging environment.
   deploy-to-staging:
-    needs: build-and-publish-images
+    needs: build-and-publish-images # This job depends on the successful completion of the build job.
     runs-on: ubuntu-latest
-    environment: staging # Links to GitHub Environments
+    environment: staging # Links to GitHub Environments, providing environment-specific configurations/secrets.
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+
     - name: Configure AWS Credentials (for IaC deployment)
       uses: aws-actions/configure-aws-credentials@v3
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
+        aws-region: us-east-1 # Specify your AWS region
 
     - name: Set up Terraform
       uses: hashicorp/setup-terraform@v2
       with:
-        terraform_version: 1.5.0 # Or desired version
+        terraform_version: 1.5.0 # Specify the Terraform version
 
     - name: Terraform Init (Staging)
-      run: terraform -chdir=./terraform_infra/environments/staging init
+      run: terraform -chdir=./terraform_infra/environments/staging init # Initialize Terraform for staging environment
 
     - name: Terraform Apply (Staging)
-      run: terraform -chdir=./terraform_infra/environments/staging apply -auto-approve \
-             -var="fastapi_image_tag=${{ needs.build-and-publish-images.outputs.fastapi_image }}" \
-             -var="pyspark_image_tag=${{ needs.build-and-publish-images.outputs.pyspark_image }}"
+      run: |
+        terraform -chdir=./terraform_infra/environments/staging apply -auto-approve \
+          -var="fastapi_image_tag=${{ needs.build-and-publish-images.outputs.fastapi_image_tag }}" \
+          -var="pyspark_image_tag=${{ needs.build-and-publish-images.outputs.pyspark_image_tag }}"
       env:
         TF_VAR_environment: staging # Pass environment variable to Terraform
 
     - name: Run End-to-End Smoke Tests on Staging
-      # This would involve:
-      # 1. Waiting for staging deployment to complete
-      # 2. Triggering data generation against staging API Gateway
-      # 3. Verifying data in S3/Delta Lake or triggering a Spark job
-      # 4. Checking Grafana/CloudWatch for basic health metrics
+      # This step would typically involve:
+      # 1. Waiting for the staging deployment to fully complete (e.g., API Gateway reachable, databases ready).
+      # 2. Triggering data generation against the staging API Gateway.
+      # 3. Verifying data lands correctly in S3/Delta Lake or triggering a Spark job to process it.
+      # 4. Checking Grafana/CloudWatch for basic health metrics and expected data flow.
       run: |
         echo "Running smoke tests on staging environment using deployed API and data lake."
         # Example: python scripts/run_smoke_tests.py --env staging --api-url ${{ secrets.STAGING_API_URL }}
-        sleep 60 # Simulate test execution
+        sleep 60 # Simulate test execution time
         echo "Staging smoke tests passed."
 
+  # Job to promote the successful staging deployment to the production environment.
+  # This typically requires a manual approval, defined in the GitHub Environment settings.
   promote-to-production:
-    needs: deploy-to-staging
+    needs: deploy-to-staging # This job depends on the successful completion of the staging deployment.
     runs-on: ubuntu-latest
-    environment: production # Links to GitHub Environments, requires manual approval
-    if: success() && github.ref == 'refs/heads/release' # Only promote if staging passed and on release branch
+    environment: production # Links to GitHub Environments, configured for manual approval.
+    if: success() && github.ref == 'refs/heads/release' # Only promote if staging passed and on the 'release' branch.
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+
     - name: Configure AWS Credentials (for IaC deployment)
       uses: aws-actions/configure-aws-credentials@v3
       with:
-        aws-access-key-id: ${{ secrets.AWS_PROD_ACCESS_KEY_ID }} # Use production specific credentials
+        aws-access-key-id: ${{ secrets.AWS_PROD_ACCESS_KEY_ID }} # Use production-specific credentials for security.
         aws-secret-access-key: ${{ secrets.AWS_PROD_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
@@ -112,11 +137,12 @@ jobs:
         terraform_version: 1.5.0
 
     - name: Terraform Init (Production)
-      run: terraform -chdir=./terraform_infra/environments/prod init
+      run: terraform -chdir=./terraform_infra/environments/prod init # Initialize Terraform for production environment
 
     - name: Terraform Apply (Production)
-      run: terraform -chdir=./terraform_infra/environments/prod apply -auto-approve \
-             -var="fastapi_image_tag=${{ needs.build-and-publish-images.outputs.fastapi_image }}" \
-             -var="pyspark_image_tag=${{ needs.build-and-publish-images.outputs.pyspark_image }}"
+      run: |
+        terraform -chdir=./terraform_infra/environments/prod apply -auto-approve \
+          -var="fastapi_image_tag=${{ needs.build-and-publish-images.outputs.fastapi_image_tag }}" \
+          -var="pyspark_image_tag=${{ needs.build-and-publish-images.outputs.pyspark_image_tag }}"
       env:
-        TF_VAR_environment: prod
+        TF_VAR_environment: prod # Pass environment variable to Terraform

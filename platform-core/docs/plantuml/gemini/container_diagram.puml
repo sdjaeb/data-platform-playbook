@@ -1,0 +1,98 @@
+@startuml
+' Embedded C4-PlantUML definitions for offline/restricted environments
+!define C4_Context(alias, label, techn, desc) SYSTEM_BOUNDARY(alias, label)
+!define C4_Container(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Component(alias, label, techn, desc) rectangle alias as label techn { desc }
+!define C4_Context_Boundary(alias, label) rectangle alias as label {
+!define C4_Container_Boundary(alias, label) rectangle alias as label {
+!define C4_Component_Boundary(alias, label) rectangle alias as label {
+!define Person(alias, label, desc) actor alias as label desc
+!define System(alias, label, desc) rectangle alias as label <<System>> desc
+!define System_Ext(alias, label, desc) rectangle alias as label <<External System>> desc
+!define System_Boundary(alias, label) rectangle alias as label {
+!define Boundary_End }
+
+
+title Container Diagram for Enterprise Data Platform
+
+System_Boundary(platform, "Enterprise Data Platform") {
+
+  Container(fastapi_ingestor, "FastAPI Ingestor", "Python (FastAPI, Uvicorn)", "High-performance API for receiving raw data.")
+  Container(kafka, "Apache Kafka", "Confluent Platform", "Distributed streaming platform; decouples producers/consumers.")
+  Container(zookeeper, "Apache Zookeeper", "Confluent Platform", "Distributed coordination service for Kafka.")
+  Container(minio, "MinIO", "Object Storage (S3-compatible)", "Local data lake for raw and curated data (Delta Lake).")
+  Container(postgres, "PostgreSQL", "Relational Database", "Stores Airflow metadata, application config, and reference data.")
+  Container(mongodb, "MongoDB", "NoSQL Document Database", "Stores semi-structured data, event logs, or dynamic profiles.")
+
+  Container(spark_master, "Spark Master", "Apache Spark", "Coordinates Spark applications for batch and streaming ETL, ML.")
+  Container(spark_worker, "Spark Worker(s)", "Apache Spark", "Executes Spark tasks assigned by the master.")
+  Container(spark_history_server, "Spark History Server", "Apache Spark", "Web UI for viewing completed and running Spark applications' history.")
+
+  Container(airflow_webserver, "Airflow Webserver", "Apache Airflow", "Web UI for monitoring and managing DAGs.")
+  Container(airflow_scheduler, "Airflow Scheduler", "Apache Airflow", "Schedules DAGs and triggers tasks.")
+  Container(airflow_init, "Airflow Init", "Apache Airflow", "One-time database upgrade and user creation for Airflow.")
+
+  Container(grafana, "Grafana", "Visualization/Monitoring Platform", "Dashboards and alerts for operational metrics.")
+  Container(grafana_alloy, "Grafana Alloy", "Telemetry Collector", "Collects metrics, logs, traces via OTLP and Prometheus scrape.")
+  Container(cadvisor, "cAdvisor", "Container Monitoring", "Collects resource usage metrics for Docker containers.")
+
+  Container(spline_rest, "Spline REST API", "Scala (REST API)", "Collects and serves Spark lineage metadata.")
+  Container(spline_ui, "Spline Web UI", "React.js", "Visualizes Spark data lineage.")
+
+  Container(openmetadata_server, "OpenMetadata Server", "Java (REST API)", "Core metadata management, catalog, and governance service.")
+  Container(openmetadata_mysql, "OpenMetadata MySQL", "MySQL", "Stores OpenMetadata application metadata.")
+  Container(openmetadata_elasticsearch, "OpenMetadata Elasticsearch", "OpenSearch/Elasticsearch", "Powers OpenMetadata search and data quality features.")
+  Container(openmetadata_ingestion, "OpenMetadata Ingestion", "Python", "Runs connectors to extract metadata from data sources.")
+
+  Container(webhook_listener, "MinIO Webhook Listener", "Python (Flask)", "Receives and processes MinIO object events.")
+
+}
+
+Person(external_sources, "External Data Sources/Users")
+Person(data_consumers, "Data Analysts, Scientists & Business Users")
+Person(devops, "Operations & DevOps Team")
+
+Rel(external_sources, fastapi_ingestor, "Sends raw data", "HTTP/JSON")
+Rel(fastapi_ingestor, kafka, "Publishes raw data", "Kafka Protocol")
+Rel(spark_master, kafka, "Consumes raw data", "Kafka Protocol")
+Rel(spark_master, minio, "Reads/Writes data (Delta Lake)", "S3 API")
+Rel(spark_master, postgres, "Reads/Writes reference data", "JDBC")
+Rel(spark_master, mongodb, "Reads/Writes semi-structured data", "MongoDB Spark Connector")
+Rel(spark_master, spline_rest, "Reports Spark lineage", "HTTP/Spline API")
+Rel(spark_worker, spark_master, "Registers and executes tasks", "Spark Protocol")
+Rel(spark_history_server, spark_master, "Reads Spark event logs", "Shared Volume")
+
+Rel(airflow_init, postgres, "Initializes DB schema", "JDBC")
+Rel(airflow_scheduler, postgres, "Manages DAG state", "JDBC")
+Rel(airflow_webserver, postgres, "Accesses DB for UI", "JDBC")
+Rel(airflow_scheduler, spark_master, "Triggers Spark jobs", "Docker exec")
+Rel(airflow_scheduler, openmetadata_ingestion, "Triggers metadata ingestion", "Docker exec")
+
+Rel(grafana_alloy, fastapi_ingestor, "Scrapes metrics", "Prometheus HTTP")
+Rel(grafana_alloy, cadvisor, "Scrapes metrics", "Prometheus HTTP")
+Rel(grafana_alloy, grafana, "Forwards metrics, logs, traces", "Prometheus Remote Write, OTLP")
+Rel(fastapi_ingestor, grafana_alloy, "Sends metrics, traces (OpenTelemetry)", "OTLP HTTP")
+Rel(cadvisor, Host, "Collects container metrics", "OS API/cgroupfs")
+
+Rel(spline_ui, spline_rest, "Queries lineage", "HTTP/REST")
+Rel(openmetadata_server, openmetadata_mysql, "Stores metadata", "MySQL Protocol")
+Rel(openmetadata_server, openmetadata_elasticsearch, "Indexes metadata for search", "Elasticsearch API")
+Rel(openmetadata_ingestion, openmetadata_server, "Pushes metadata", "OpenMetadata REST API")
+Rel(openmetadata_ingestion, kafka, "Extracts Kafka topic metadata", "Kafka API")
+Rel(openmetadata_ingestion, minio, "Extracts S3/Delta Lake metadata", "S3 API")
+Rel(openmetadata_ingestion, postgres, "Extracts PostgreSQL metadata", "JDBC")
+Rel(openmetadata_ingestion, spline_rest, "Extracts Spark lineage", "Spline API")
+Rel(openmetadata_ingestion, fastapi_ingestor, "Extracts API metadata", "HTTP/OpenAPI")
+Rel(openmetadata_ingestion, mongodb, "Extracts MongoDB metadata", "MongoDB API")
+
+Rel(minio, webhook_listener, "Sends object events", "Webhook HTTP POST")
+
+Rel(data_consumers, grafana, "Views dashboards", "HTTP")
+Rel(data_consumers, openmetadata_server, "Explores data catalog", "HTTP")
+Rel(data_consumers, minio, "Accesses raw/curated data", "S3 API (conceptual direct access)")
+Rel(data_consumers, spark_master, "Accesses Spark UI", "HTTP")
+Rel(data_consumers, airflow_webserver, "Manages workflows", "HTTP")
+Rel(data_consumers, spline_ui, "Views data lineage", "HTTP")
+
+Rel(devops, platform, "Manages infrastructure", "CLI/APIs")
+@enduml
