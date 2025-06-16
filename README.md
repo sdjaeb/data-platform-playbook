@@ -1,39 +1,59 @@
 # Modern Data Stack Lab: Local & Learn
 
-NOTE: This repo is a first draft, work in progress. I may fix stuff, I may not. The intent was to prepare for some Data Engineering interviews and learn some things.
+NOTE: This repository is a first draft, a work in progress, designed to facilitate learning and preparation for Data Engineering interviews by providing hands-on experience with a modern data stack.
 
-This repository contains the comprehensive guide and a Docker Compose-based local development environment for building and understanding a modern, enterprise-ready data platform. It emphasizes practical, hands-on experience with core data engineering technologies, covering ingestion, storage, processing, orchestration, observability, and governance.
+This repository contains a comprehensive guide and a Docker Compose-based local development environment for building and understanding a modern, enterprise-ready data platform. It emphasizes practical, hands-on experience with core data engineering technologies, covering ingestion, storage, processing, orchestration, observability, and governance.
 
-The `docs` folder has all the relevant documentation about this project.
-- deep dives: My attempt to provide some basic howtos with the platform.
-- highlights: My attempt to showcase a particular core component in the platform.
-- Building Enterprise-Ready Data Platforms v2.4.pdf: This was the "final" version I started breaking up.
-- Building Enterprise-Ready Data Platforms_ Core Handbook v1.pdf: The starting point for the broken-up parts.
-- Data Platform *: Docs I made before I did the Deep Dives and Highlights. Might be some overlap.
+The `docs` folder has all the relevant documentation about this project:
+
+* deep dives: Detailed how-tos and explanations for specific platform components.
+
+* highlights: Focuses on showcasing a particular core component in the platform.
+
+* Building Enterprise-Ready Data Platforms v2.4.pdf: The "final" version that served as a basis for breaking down content.
+
+* Building Enterprise-Ready Data Platforms\_ Core Handbook v1.pdf: The starting point for the broken-up parts.
+
+* Data Platform \*: Earlier documentation that may have some overlap.
 
 ## Table of Contents
 
-1.  [Purpose and Introduction](#1-purpose-and-introduction)
-2.  [Core Architectural Concepts](#2-core-architectural-concepts)
-3.  [Key Technologies](#3-key-technologies)
-4.  [Getting Started (Local Environment Setup)](#4-getting-started-local-environment-setup)
-    * [Prerequisites](#prerequisites)
-    * [Quick Start](#quick-start)
-    * [Accessing UIs](#accessing-uis)
-5.  [Platform Usage & Walkthrough](#5-platform-usage--walkthrough)
-6.  [Deep Dives & Advanced Topics](#6-deep-dives--advanced-topics)
-7.  [Project Structure](#7-project-structure)
-8.  [Contributing](#8-contributing)
-9.  [License](#9-license)
+1. [Purpose and Introduction](#1-purpose-and-introduction)
+
+2. [Core Architectural Concepts](#2-core-architectural-concepts)
+
+3. [Key Technologies](#3-key-technologies)
+
+4. [Getting Started (Local Environment Setup)](#4-getting-started-local-environment-setup)
+
+   * [Prerequisites](#prerequisites)
+
+   * [Quick Start](#quick-start)
+
+   * [Accessing UIs](#accessing-uis)
+
+5. [Platform Usage & Walkthrough](#5-platform-usage--walkthrough)
+
+6. [Deep Dives & Advanced Topics](#6-deep-dives--advanced-topics)
+
+7. [Project Structure](#7-project-structure)
+
+8. [Contributing](#8-contributing)
+
+9. [License](#9-license)
 
 ## 1. Purpose and Introduction
 
 In today's data-driven world, enterprises require robust and scalable data platforms to ingest, process, store, and analyze vast amounts of data from diverse sources. This project provides a blueprint and a fully functional local environment that mirrors a production-grade data platform. It's designed for experienced Data Engineers and Senior Software Engineers to rapidly prototype, test, and understand complex distributed data systems without incurring cloud costs or dependencies.
 
 The guide meticulously covers:
+
 * Building a resilient local development environment.
+
 * Implementing Python-based ETL pipelines.
+
 * Adhering to modern architectural patterns and best practices, including Infrastructure as Code (IaC), CI/CD, comprehensive testing, data contracts, and observability.
+
 * Exploring advanced topics like Machine Learning (ML) tooling, AI/LLM integration, and cloud migration strategies.
 
 ## 2. Core Architectural Concepts
@@ -41,10 +61,15 @@ The guide meticulously covers:
 The platform is designed around a layered architecture, promoting modularity, scalability, and maintainability:
 
 * **Ingestion Layer:** Captures data from various sources, handling high throughput and diverse formats.
+
 * **Storage Layer (Data Lakehouse):** Provides flexible, scalable, and transactional storage for raw, refined, and curated data.
+
 * **Processing Layer:** Transforms, cleanses, and enriches data using distributed computing frameworks.
+
 * **Orchestration & Governance Layer:** Manages workflow dependencies, schedules jobs, and provides data catalog, lineage, and quality insights.
+
 * **Observability Layer:** Monitors system health, performance, and data flow, enabling proactive issue detection.
+
 * **Consumption Layer:** Makes processed data available for analytics, reporting, and downstream applications.
 
 ## 3. Key Technologies
@@ -52,19 +77,35 @@ The platform is designed around a layered architecture, promoting modularity, sc
 This project leverages the following open-source technologies, which are central to modern data platforms:
 
 * **FastAPI:** High-performance web framework for building data ingestion APIs.
+
 * **Apache Kafka:** Distributed streaming platform for real-time data ingestion and decoupled architecture.
+
 * **Apache Spark:** Unified analytics engine for large-scale data processing (batch and streaming).
+
 * **Delta Lake:** Open-source storage layer that brings ACID transactions, schema enforcement, and time travel to data lakes (on MinIO).
+
 * **MinIO:** High-performance, S3-compatible object storage for local data lake simulation.
+
 * **PostgreSQL:** Robust relational database for application metadata, reference data, and Apache Airflow's metastore.
-* **MongoDB:** Flexible NoSQL document database for semi-structured data or specific application use cases.
+
+* **MongoDB:** Flexible NoSQL document database for semi-structured data, event logs, or specific application use cases (e.g., data processed by `mongo_processor.py`).
+
 * **Apache Airflow:** Workflow orchestration platform to programmatically author, schedule, and monitor data pipelines.
+
 * **Spline:** Automated data lineage tracking for Apache Spark jobs.
+
 * **OpenMetadata:** Unified data catalog, data lineage, and data quality platform for data discovery and governance.
-* **Grafana Alloy:** OpenTelemetry Collector distribution for unified telemetry (metrics, logs, traces) collection.
+
+* **Grafana Alloy:** OpenTelemetry Collector distribution for unified telemetry (metrics, logs, traces) collection. Collects, processes, and exports telemetry data (metrics, logs, traces) from your applications and infrastructure.
+
 * **Grafana:** Open-source platform for interactive data visualization, monitoring, and alerting.
+
 * **cAdvisor:** Container Advisor for monitoring resource usage and performance of Dockerized services.
+
+* **MinIO Webhook Listener:** A custom Flask application that receives MinIO object lifecycle events, demonstrating event-driven architecture patterns.
+
 * **AWS SAM CLI:** (Conceptual integration) Local development tool for serverless applications.
+
 * **Locust:** (Conceptual integration) Open-source load testing tool.
 
 ## 4. Getting Started (Local Environment Setup)
@@ -76,74 +117,93 @@ This section guides you through setting up the complete data platform on your lo
 Ensure you have the following installed on your machine:
 
 * **Docker Desktop** (or Docker Engine on Linux): For running containers.
+
 * **Git:** For cloning this repository.
+
 * **Python 3.x:** With `pip` for running scripts and managing Python dependencies.
-* **`docker-compose`:** (Usually included with Docker Desktop, or install separately).
+
+* **Docker Compose (v2+ CLI, i.e., 'docker compose')**: For orchestrating multi-container applications.
+
 * **AWS SAM CLI:** (Optional, for serverless examples; install if you plan to use `sam_lambda` features).
 
 ### Quick Start
 
-1.  **Clone the Repository:**
-    ```bash
-    git clone <your-repo-url>/data-ingestion-platform.git
-    cd data-ingestion-platform
-    ```
+1. **Clone the Repository:**
 
-2.  **Run the Quick Start Script:**
-    This script will create necessary directories, copy conceptual code snippets to their working locations, and bring up all Docker Compose services for the **Advanced Track** environment.
+        git clone <your-repo-url>/data-ingestion-platform.git
+        cd data-ingestion-platform
 
-    ```bash
-    chmod +x scripts/quick_start.sh
-    ./scripts/quick_start.sh
-    ```
-    *This command will take several minutes as it builds images and starts numerous services. Monitor the output for progress and any errors.*
+2. **Run the Bootstrap Script:**
+This comprehensive script will perform prerequisite checks, create necessary project directories, download external dependencies (like Spline JARs), build custom Docker images, bring up all Docker Compose services, and perform initial setup steps for Airflow (DB migration, admin user), Kafka (topic creation), and MinIO (bucket creation, webhook configuration).
+
+        chmod +x bootstrap.sh
+        ./bootstrap.sh
+
+*This command will take several minutes as it builds images and starts numerous services. Monitor the output for progress and any errors.*
 
 ### Accessing UIs
 
-Once the `quick_start.sh` script completes and services become healthy, you can access the following UIs in your web browser:
+Once the `bootstrap.sh` script completes and services become healthy, you can access the following UIs in your web browser:
 
 * **FastAPI Docs (Swagger UI):** `http://localhost:8000/docs`
-* **MinIO Console:** `http://localhost:9901` (User: `minioadmin`, Pass: `minioadmin`)
-* **Spark Master UI:** `http://localhost:8080` (Check Spark job status, not for applications)
+
+* **MinIO Console:** `http://localhost:9001` (User: `minioadmin`, Pass: `minioadmin`)
+
+* **Spark Master UI:** `http://localhost:8088` (Check Spark job status, not for applications)
+
 * **Spark History Server:** `http://localhost:18080` (After Spark jobs run, for historical job details)
+
 * **Airflow UI:** `http://localhost:8081` (User: `admin`, Pass: `admin`)
+
 * **Grafana UI:** `http://localhost:3000` (User: `admin`, Pass: `admin`)
+
 * **Spline UI:** `http://localhost:9090`
+
 * **OpenMetadata UI:** `http://localhost:8585`
 
 ## 5. Platform Usage & Walkthrough
 
 After the environment is up, you can start interacting with the platform:
 
-1.  **Generate Data:**
-    The `simulate_data.py` script sends mock financial transactions and insurance claims to the FastAPI ingestor.
-    ```bash
-    python3 scripts/simulate_data.py
-    ```
-    Keep this running in a separate terminal to provide continuous data flow.
+1. **Generate Data:**
+The `simulate_data.py` script sends mock financial transactions and insurance claims to the FastAPI ingestor.
 
-2.  **Observe Data Flow:**
-    * **FastAPI Logs:** Check `docker compose logs fastapi_ingestor` to see incoming requests and Kafka messages being sent.
-    * **Kafka Consumption (Spark):** The Spark streaming job (`streaming_consumer.py`) continuously consumes from Kafka and writes to MinIO. Monitor `docker compose logs spark` or Spark UI to see this.
-    * **MinIO Console:** Observe new files appearing in `raw-data-bucket/financial_data_delta/` and `raw-data-bucket/insurance_data_delta/`.
+        python3 simulate_data.py
 
-3.  **Run ETL/ELT Jobs:**
-    * **Airflow Orchestration:** Trigger the `financial_data_lake_pipeline` DAG in the Airflow UI (`http://localhost:8081`). This DAG orchestrates Spark jobs for ingestion and transformation.
-    * **MinIO Console:** See transformed data appear in `curated-data-bucket/`.
+Keep this running in a separate terminal to provide continuous data flow.
 
-4.  **Monitor with Grafana:**
-    * Explore dashboards in Grafana (`http://localhost:3000`) to visualize API request rates, Kafka consumer lag, Spark resource utilization, and overall container health.
+2. **Observe Data Flow:**
 
-5.  **Explore Data Catalog & Lineage with OpenMetadata/Spline:**
-    * Access OpenMetadata (`http://localhost:8585`) to browse data assets, view schemas, and inspect data lineage for your Spark-processed tables.
+* **FastAPI Logs:** Check `docker compose logs fastapi_ingestor` to see incoming requests and Kafka messages being sent.
+
+* **Kafka Consumption (Spark):** The Spark streaming job (`streaming_consumer.py`) continuously consumes from Kafka and writes to MinIO. Monitor `docker compose logs spark` or Spark UI to see this.
+
+* **MinIO Console:** Observe new files appearing in `raw-data-bucket/financial_data_delta/` and `raw-data-bucket/insurance_data_delta/`.
+
+3. **Run ETL/ELT Jobs:**
+
+* **Airflow Orchestration:** Trigger the `full_pipeline_with_governance` DAG (or `openmetadata_ingestion_dag`) in the Airflow UI (`http://localhost:8081`). This DAG orchestrates Spark jobs for ingestion and transformation, and also triggers metadata ingestion.
+
+* **MinIO Console:** See transformed data appear in `curated-data-bucket/`.
+
+4. **Monitor with Grafana:**
+
+* Explore dashboards in Grafana (`http://localhost:3000`) to visualize API request rates, Kafka consumer lag, Spark resource utilization, and overall container health.
+
+5. **Explore Data Catalog & Lineage with OpenMetadata/Spline:**
+
+* Access OpenMetadata (`http://localhost:8585`) to browse data assets, view schemas, and inspect data lineage for your Spark-processed tables.
 
 ## 6. Deep Dives & Advanced Topics
 
 This project is accompanied by a series of "Deep Dive" documents that provide detailed explanations and interactive how-tos for specific aspects of the platform:
 
 * **Deep Dive: ML Tooling in the Platform:** Explores feature engineering, model training, and inference using Spark and your data lakehouse.
+
 * **Deep Dive: Integrating AI/LLMs/MLOps:** Covers data preparation for RAG, LLM interaction via API gateways, and MLOps principles for AI/LLM workloads.
+
 * **Deep Dive: Applying Platform Concepts to Snowflake:** Maps local open-source components to their Snowflake equivalents and demonstrates data ingestion and transformation in Snowflake.
+
 * **Deep Dive: Cloud Component Comparison (AWS, Azure, GCP):** Provides a high-level comparison of managed service equivalents across the major cloud providers.
 
 Refer to these documents for detailed explanations and guided exercises.
@@ -164,8 +224,9 @@ data-ingestion-platform/
 │   ├── spark-events/
 │   ├── grafana/
 │   ├── openmetadata_mysql/
-│   └── openmetadata_elasticsearch/
-├── src/                     # Core Python application logic (common utils, models)
+│   ├── openmetadata_elasticsearch/
+│   └── spline_jars/         # Downloaded Spline agent JARs for Spark integration
+├── src/                     # Core Python application logic (e.g., common utilities, data models)
 │   └── common/
 │   └── models/              # Pydantic/Avro schemas for data contracts
 ├── fastapi_app/             # FastAPI ingestion service (Docker context, app code, tests)
@@ -183,13 +244,12 @@ data-ingestion-platform/
 │   ├── environments/        # Environment-specific Terraform configurations (dev, staging, prod)
 ├── sam_lambda/              # AWS SAM CLI local serverless development examples
 ├── load_testing/            # Locust load test scripts
-├── scripts/                 # Utility scripts (e.g., quick_start.sh, simulate_data.py)
-├── conceptual_code/         # Consolidated source code snippets from documentation
+├── scripts/                 # Utility scripts (e.g., simulate_data.py)
+├── webhook_listener_app/    # Custom Flask application to receive MinIO webhook events
 └── docker-compose.yml       # Central Docker Compose file for local environment
 └── docker-compose.test.yml  # Docker Compose for integration testing
 └── README.md                # This document
 ```
-
 ## 8. Contributing
 
 Contributions are welcome! If you find issues or have suggestions for improvements, please open an issue or submit a pull request.
