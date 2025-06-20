@@ -1,17 +1,5 @@
 @startuml
-' Embedded C4-PlantUML definitions for offline/restricted environments
-!define C4_Context(alias, label, techn, desc) rectangle alias as label techn { desc }
-!define C4_Container(alias, label, techn, desc) rectangle alias as label techn { desc }
-!define C4_Component(alias, label, techn, desc) rectangle alias as label techn { desc }
-!define C4_Context_Boundary(alias, label) rectangle alias as label {
-!define C4_Container_Boundary(alias, label) rectangle alias as label {
-!define C4_Component_Boundary(alias, label) rectangle alias as label {
-!define Person(alias, label, desc) actor alias as label desc
-!define System(alias, label, desc) rectangle alias as label <<System>> desc
-!define System_Ext(alias, label, desc) rectangle alias as label <<External System>> desc
-!define System_Boundary(alias, label) rectangle alias as label {
-!define Boundary_End }
-
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
 title Component Diagram: Apache Airflow
 

@@ -1,0 +1,61 @@
+// Define a Prometheus remote write exporter
+prometheus.remote_write "default_remote_write" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+    send_exemplars = false
+  }
+}
+
+// Define an OTLP exporter for traces to Jaeger/Tempo
+otelcol.exporter.otlp "jaeger_tempo_exporter" {
+  client {
+    endpoint = "jaeger:4317" // Assuming Jaeger is reachable at jaeger:4317 (OTLP gRPC)
+    // Remove 'protocol = "grpc"' as it's not a direct attribute here.
+    // OTLP gRPC is often the default for this exporter when no scheme is specified.
+  }
+}
+
+// Instead of otelcol.exporter.logging, use loki.write with a stdout endpoint for debugging logs.
+loki.write "stdout_log_printer" {
+  endpoint {
+    url = "stdout" // This sends logs to the console where Alloy is running
+  }
+}
+
+// New component: otelcol.exporter.loki to bridge OTLP logs to Loki-compatible format
+otelcol.exporter.loki "otlp_to_loki_logs" {
+  forward_to = [loki.write.stdout_log_printer.receiver]
+}
+
+
+// Define an OpenTelemetry Collector OTLP receiver
+otelcol.receiver.otlp "default_otlp_receiver" {
+  http {}
+  grpc {}
+
+  output {
+    metrics = [otelcol.exporter.prometheus.metrics_exporter.input]
+    traces  = [otelcol.exporter.otlp.jaeger_tempo_exporter.input]
+    // Connect OTLP logs to the new otelcol.exporter.loki component's input
+    logs    = [otelcol.exporter.loki.otlp_to_loki_logs.input]
+  }
+}
+
+// Use a component to bridge OTLP metrics to Prometheus remote write
+otelcol.exporter.prometheus "metrics_exporter" {
+  forward_to = [prometheus.remote_write.default_remote_write.receiver]
+}
+
+prometheus.scrape "fastapi_ingestor_metrics" {
+  targets           = [{ "__address__" = "fastapi-ingestor:8000" },]
+  job_name          = "fastapi_ingestor"
+  scrape_interval = "30s"
+  forward_to        = [prometheus.remote_write.default_remote_write.receiver]
+}
+
+prometheus.scrape "cadvisor_metrics" {
+  targets           = [{ "__address__" = "cadvisor:8080" },]
+  job_name          = "cadvisor"
+  scrape_interval = "30s"
+  forward_to        = [prometheus.remote_write.default_remote_write.receiver]
+}

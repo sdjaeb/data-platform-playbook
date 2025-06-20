@@ -1,0 +1,118 @@
+version: '3.8'
+
+volumes:
+  mysql_data:
+  es_data: # Added for Elasticsearch
+
+services:
+  mysql:
+    image: docker.getcollate.io/openmetadata/db:1.7.4 # Changed to official image
+    container_name: openmetadata-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass1
+      # MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD will be used by the image to init the DB
+      # if it's the first run and the database 'openmetadata_db' doesn't exist.
+      MYSQL_DATABASE: openmetadata_db
+      MYSQL_USER: user1
+      MYSQL_PASSWORD: password1
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - openmeta-net
+    healthcheck:
+      test: mysql --user=root --password=$$MYSQL_ROOT_PASSWORD --silent --execute "use openmetadata_db" # More robust healthcheck
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.4 # As per official compose
+    container_name: openmetadata-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms1024m -Xmx1024m
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    networks:
+      - openmeta-net
+    healthcheck:
+      test: "curl -s http://localhost:9200/_cluster/health?pretty | grep status | grep -qE 'green|yellow' || exit 1"
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  execute-migrate-all:
+    image: docker.getcollate.io/openmetadata/server:1.7.4
+    container_name: openmetadata-migrate-all
+    command: "./bootstrap/openmetadata-ops.sh migrate"
+    environment:
+      # Database configuration
+      - DB_DRIVER_CLASS=com.mysql.cj.jdbc.Driver
+      - DB_SCHEME=mysql
+      - DB_PARAMS=allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=user1 # Your DB user
+      - DB_USER_PASSWORD=password1 # Your DB password
+      - OM_DATABASE=openmetadata_db # Your DB name
+      # Elasticsearch configuration
+      - ELASTICSEARCH_HOST=elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - ELASTICSEARCH_SCHEME=http
+      # Add other essential env vars from official compose if needed, but these are key for migration
+    depends_on:
+      mysql:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - openmeta-net
+
+  openmetadata-server:
+    image: docker.getcollate.io/openmetadata/server:1.7.4
+    container_name: openmetadata-server
+    ports:
+      - "8585:8585"
+    environment:
+      - OPENMETADATA_CLUSTER_NAME=docker-cluster
+      # Database configuration
+      - DB_DRIVER_CLASS=com.mysql.cj.jdbc.Driver
+      - DB_SCHEME=mysql
+      - DB_PARAMS=allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=user1
+      - DB_USER_PASSWORD=password1
+      - OM_DATABASE=openmetadata_db
+      # Elasticsearch configuration
+      - ELASTICSEARCH_HOST=elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - ELASTICSEARCH_SCHEME=http
+      # Add other essential env vars from official compose for full functionality
+    depends_on:
+      mysql:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      execute-migrate-all: # Wait for migrations to complete
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - openmeta-net
+    healthcheck:
+      # The official compose uses healthcheck on admin port 8586
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8586/healthcheck || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+networks:
+  openmeta-net:
+    driver: bridge

@@ -36,60 +36,84 @@ mkdir -p webhook_listener_app
 
 # Create dummy files/directories if they don't exist, as required by docker-compose mounts
 touch ./observability/alloy-config.river # Ensure this file exists for Grafana Alloy mount
-touch ./fastapi_app/requirements.txt # Ensure requirements.txt exists for FastAPI build
-touch ./webhook_listener_app/requirements.txt # Ensure requirements.txt exists for webhook listener build
-touch ./webhook_listener_app/app.py # Ensure app.py exists for webhook listener build
-
-echo "Project directories created."
-
-# --- 3. Download External Dependencies (Spline JARs) ---
-echo "--- Downloading Spline JARs (if not already present in data/spline_jars) ---"
-SPLINE_JARS_DIR="./data/spline_jars"
-SPLINE_AGENT_URL="https://repo1.maven.org/maven2/za/co/absa/spline/spline-agent-bundle_2.12/0.7.1/spline-agent-bundle_2.12-0.7.1.jar"
-SPLINE_SPARK_AGENT_BUNDLE_URL="https://repo1.maven.org/maven2/za/co/absa/spline/spline-spark-agent-bundle_2.12/0.7.1/spline-spark-agent-bundle_2.12-0.7.1.jar"
-
-if [ ! -f "${SPLINE_JARS_DIR}/spline-agent-bundle_2.12-0.7.1.jar" ]; then
-    echo "Downloading spline-agent-bundle_2.12-0.7.1.jar..."
-    curl -L -o "${SPLINE_JARS_DIR}/spline-agent-bundle_2.12-0.7.1.jar" "$SPLINE_AGENT_URL"
-else
-    echo "spline-agent-bundle_2.12-0.7.1.jar already exists."
-fi
-
-if [ ! -f "${SPLINE_JARS_DIR}/spline-spark-agent-bundle_2.12-0.7.1.jar" ]; then
-    echo "Downloading spline-spark-agent-bundle_2.12-0.7.1.jar..."
-    curl -L -o "${SPLINE_JARS_DIR}/spline-spark-agent-bundle_2.12-0.7.1.jar" "$SPLINE_SPARK_AGENT_BUNDLE_URL"
-else
-    echo "spline-spark-agent-bundle_2.12-0.7.1.jar already exists."
-fi
-
-echo "Spline JARs checked/downloaded."
-
-
-# --- 4. Prepare Configuration and App Files (Placeholders for Demonstration) ---
-echo "--- Ensuring application and configuration files are in place ---"
-# IMPORTANT: In a real repo, these would be version-controlled, not copied from conceptual_code.
-# This assumes the user has already populated these directories as per the HOWTO guide.
-# If these files are missing, the docker compose build/run commands might fail.
-
-# FastAPI app files (main.py, requirements.txt, Dockerfile)
-# PySpark job files (streaming_consumer.py, batch_transformations.py, etc.)
-# Airflow DAGs
-# Grafana Alloy config (alloy-config.river)
-# OpenMetadata ingestion configs
-# Webhook listener app files
-
-# For demonstration, we will create minimal placeholder files if they don't exist
-# This ensures `docker compose build` and `up` commands don't fail immediately.
-# A user following the HOWTO would have already populated these correctly.
+# Corrected requirements.txt for FastAPI, removing opentelemetry-sdk-metrics and adding correct packages
+[ -f "./fastapi_app/requirements.txt" ] || echo "fastapi\nuvicorn\nkafka-python\nopentelemetry-api\nopentelemetry-sdk\nopentelemetry-instrumentation-fastapi\nopentelemetry-exporter-otlp-proto-http" > ./fastapi_app/requirements.txt
 [ -f "./fastapi_app/app/main.py" ] || echo "from fastapi import FastAPI; app = FastAPI(); @app.get('/')\nasync def root(): return {'message': 'Hello'}" > ./fastapi_app/app/main.py
-[ -f "./fastapi_app/requirements.txt" ] || echo "fastapi\nuvicorn" > ./fastapi_app/requirements.txt
 [ -f "./fastapi_app/Dockerfile" ] || echo "FROM python:3.9-slim-buster\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY app /app/app\nEXPOSE 8000\nCMD [\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]" > ./fastapi_app/Dockerfile
 
 [ -f "./webhook_listener_app/app.py" ] || echo "from flask import Flask, request, jsonify\napp = Flask(__name__)\n@app.route('/health', methods=['GET'])\ndef health_check(): return jsonify({\"status\": \"healthy\"}), 200\n@app.route('/minio-event', methods=['POST'])\ndef minio_event(): print('MinIO event received!'); return jsonify({\"status\": \"success\"})\nif __name__ == '__main__': app.run(host='0.0.0.0', port=8081, debug=True)" > ./webhook_listener_app/app.py
 [ -f "./webhook_listener_app/requirements.txt" ] || echo "flask" > ./webhook_listener_app/requirements.txt
 [ -f "./webhook_listener_app/Dockerfile" ] || echo "FROM python:3.9-slim-buster\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY app.py .\nEXPOSE 8081\nCMD [\"python\", \"app.py\"]" > ./webhook_listener_app/Dockerfile
 
-[ -f "./observability/alloy-config.river" ] || echo 'prometheus.remote_write "default" { url = "http://grafana:9090/api/prom/push" } otelcol.receiver.otlp "default" { http {} grpc {} output { metrics = [prometheus.remote_write.default.receiver] logs = [otelcol.exporter.logging.log_printer.input] } } otelcol.exporter.logging "log_printer" { log_level = "info" } prometheus.scrape "cadvisor_metrics" { targets = [{"__address__" = "cadvisor:8080"}] forward_to = [prometheus.remote_write.default.receiver] job = "cadvisor" }' > ./observability/alloy-config.river
+# Updated alloy-config.river with proper newlines
+# if [ ! -f "./observability/alloy-config.river" ]; then
+#   cat <<EOF > "./observability/alloy-config.river"
+# prometheus.remote_write "default" {
+#   url = "http://grafana:9090/api/prom/push"
+# }
+
+# otelcol.receiver.otlp "default" {
+#   http {}
+#   grpc {}
+#   output {
+#     metrics = [prometheus.remote_write.default.receiver]
+#     logs = [otelcol.exporter.logging.log_printer.input]
+#   }
+# }
+
+# otelcol.exporter.logging "log_printer" {
+#   log_level = "info"
+# }
+
+# prometheus.scrape "cadvisor_metrics" {
+#   targets = [{"__address__" = "cadvisor:8080"}]
+#   forward_to = [prometheus.remote_write.default.receiver]
+#   job = "cadvisor"
+# }
+# EOF
+# fi
+
+# Placeholder for data_arrival_sensor_dag.py
+# This provides a minimal working DAG to allow Airflow init to complete.
+# Users should replace this with their actual DAG logic.
+if [ ! -f "./airflow_dags/data_arrival_sensor_dag.py" ]; then
+  cat <<EOF > "./airflow_dags/data_arrival_sensor_dag.py"
+from airflow import DAG
+from airflow.providers.amazon.aws.sensors.s3 import S3KeySensor
+from airflow.operators.bash import BashOperator
+from datetime import datetime, timedelta
+
+with DAG(
+    dag_id='data_arrival_sensor_dag',
+    start_date=datetime(2023, 1, 1),
+    schedule_interval=None,
+    catchup=False,
+    tags=['example', 's3', 'sensor'],
+) as dag:
+    # Sensor to wait for a specific file pattern in MinIO
+    # Note: S3KeySensor by default uses boto3, ensure minio is configured as S3 endpoint
+    # For a simpler local test with MinIO, you might need to configure AWS connection
+    # in Airflow UI or use a custom sensor. This example assumes basic S3KeySensor can reach MinIO.
+    wait_for_financial_data = S3KeySensor(
+        task_id='wait_for_new_financial_data_file',
+        bucket_name='raw-data-bucket', # Assuming this bucket is created by bootstrap.sh
+        bucket_key='financial_data_delta/placeholder_file_success.txt', # Added a placeholder bucket_key
+        prefix='financial_data_delta/', # Just checks if files exist under this prefix
+        wildcard_match=True, # Allows prefix/wildcard matching
+        aws_conn_id='aws_default', # This connection needs to be configured in Airflow
+        poke_interval=5, # Check every 5 seconds
+        timeout=60 * 5, # Timeout after 5 minutes
+        mode='poke',
+    )
+
+    data_arrived_task = BashOperator(
+        task_id='data_arrived_notification',
+        bash_command='echo "Financial data file arrived! Proceeding with processing (conceptual)."',
+    )
+
+    wait_for_financial_data >> data_arrived_task
+EOF
+fi
 
 echo "Placeholder application and configuration files ensured."
 

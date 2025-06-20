@@ -2,20 +2,20 @@
 # This file lists the Python dependencies for the FastAPI application.
 # It includes standard web framework libraries and OpenTelemetry SDK components
 # for instrumenting the application to emit telemetry data (metrics, logs, traces).
-fastapi==0.104.1
-uvicorn==0.24.0.post1
-python-dotenv==1.0.0
-kafka-python==2.0.2
-pydantic==2.5.3 # Pinning for compatibility
-opentelemetry-api==1.22.0
-opentelemetry-sdk==1.22.0
-opentelemetry-exporter-otlp==1.22.0 # For exporting OTLP metrics, logs, traces
-opentelemetry-instrumentation-fastapi==0.43b0 # For auto-instrumenting FastAPI
-opentelemetry-instrumentation-requests==0.43b0 # For auto-instrumenting HTTP requests made by app
-opentelemetry-sdk-extension-aws==2.0.0 # Potentially useful for AWS environment, but not strictly needed for local
-opentelemetry-distro==0.43b0 # Provides a convenient way to install core OpenTelemetry components
-opentelemetry-instrumentation-logging==0.43b0 # For auto-instrumenting Python's logging module
-opentelemetry-sdk-metrics==1.22.0 # Required for custom metrics, specifically histogram and counter
+# fastapi==0.104.1
+# uvicorn==0.24.0.post1
+# python-dotenv==1.0.0
+# kafka-python==2.0.2
+# pydantic==2.5.3 # Pinning for compatibility
+# opentelemetry-api==1.22.0
+# opentelemetry-sdk==1.22.0
+# opentelemetry-exporter-otlp==1.22.0 # For exporting OTLP metrics, logs, traces
+# opentelemetry-instrumentation-fastapi==0.43b0 # For auto-instrumenting FastAPI
+# opentelemetry-instrumentation-requests==0.43b0 # For auto-instrumenting HTTP requests made by app
+# opentelemetry-sdk-extension-aws==2.0.0 # Potentially useful for AWS environment, but not strictly needed for local
+# opentelemetry-distro==0.43b0 # Provides a convenient way to install core OpenTelemetry components
+# opentelemetry-instrumentation-logging==0.43b0 # For auto-instrumenting Python's logging module
+# opentelemetry-sdk-metrics==1.22.0 # Required for custom metrics, specifically histogram and counter
 # The Kafka-Python library is not directly instrumented by OpenTelemetry out-of-the-box for producers.
 # For full end-to-end tracing including Kafka production, manual instrumentation or a custom
 # instrumentation library would be needed. This example focuses on FastAPI's HTTP layer and custom metrics.
