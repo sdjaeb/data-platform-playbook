@@ -108,6 +108,10 @@ echo "Placeholder application and configuration files ensured."
 # --- 5. Bring up Docker Compose Services ---
 echo "--- Bringing up Docker Compose services for the full data platform ---"
 echo "This will wait for all services to become healthy and may take several minutes."
+echo "Note: The platform is defined across multiple 'docker-compose.*.yml' files."
+echo "The main 'docker-compose.yml' uses the 'include' directive to combine them."
+echo "This allows for a modular setup."
+
 
 # The '--wait' flag tells Compose to wait until all services with a healthcheck
 # are in a 'healthy' state. This simplifies the script by removing manual polling loops.
