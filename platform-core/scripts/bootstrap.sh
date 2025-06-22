@@ -26,13 +26,15 @@ echo "All essential prerequisites appear to be met."
 
 # --- 2. Project Directory Setup ---
 echo "--- Setting up project directories ---"
-mkdir -p data/{postgres,mongodb,minio,spark-events,grafana,airflow_logs,openmetadata_mysql,openmetadata_elasticsearch,spline_jars}
+mkdir -p data/{postgres,mongodb,minio,spark-events,grafana,airflow_logs,openmetadata_elasticsearch,spline_jars}
 mkdir -p fastapi_app/app
 mkdir -p pyspark_jobs
 mkdir -p airflow_dags
 mkdir -p observability/{grafana_dashboards,grafana_datasources}
 mkdir -p openmetadata_ingestion_scripts
 mkdir -p webhook_listener_app
+mkdir -p dbt_projects
+mkdir -p dbt_profiles
 
 # Create dummy files/directories if they don't exist, as required by docker-compose mounts
 touch ./observability/alloy-config.river # Ensure this file exists for Grafana Alloy mount
@@ -44,34 +46,6 @@ touch ./observability/alloy-config.river # Ensure this file exists for Grafana A
 [ -f "./webhook_listener_app/app.py" ] || echo "from flask import Flask, request, jsonify\napp = Flask(__name__)\n@app.route('/health', methods=['GET'])\ndef health_check(): return jsonify({\"status\": \"healthy\"}), 200\n@app.route('/minio-event', methods=['POST'])\ndef minio_event(): print('MinIO event received!'); return jsonify({\"status\": \"success\"})\nif __name__ == '__main__': app.run(host='0.0.0.0', port=8081, debug=True)" > ./webhook_listener_app/app.py
 [ -f "./webhook_listener_app/requirements.txt" ] || echo "flask" > ./webhook_listener_app/requirements.txt
 [ -f "./webhook_listener_app/Dockerfile" ] || echo "FROM python:3.9-slim-buster\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY app.py .\nEXPOSE 8081\nCMD [\"python\", \"app.py\"]" > ./webhook_listener_app/Dockerfile
-
-# Updated alloy-config.river with proper newlines
-# if [ ! -f "./observability/alloy-config.river" ]; then
-#   cat <<EOF > "./observability/alloy-config.river"
-# prometheus.remote_write "default" {
-#   url = "http://grafana:9090/api/prom/push"
-# }
-
-# otelcol.receiver.otlp "default" {
-#   http {}
-#   grpc {}
-#   output {
-#     metrics = [prometheus.remote_write.default.receiver]
-#     logs = [otelcol.exporter.logging.log_printer.input]
-#   }
-# }
-
-# otelcol.exporter.logging "log_printer" {
-#   log_level = "info"
-# }
-
-# prometheus.scrape "cadvisor_metrics" {
-#   targets = [{"__address__" = "cadvisor:8080"}]
-#   forward_to = [prometheus.remote_write.default.receiver]
-#   job = "cadvisor"
-# }
-# EOF
-# fi
 
 # Placeholder for data_arrival_sensor_dag.py
 # This provides a minimal working DAG that matches the "Next Steps" instructions.
@@ -100,6 +74,36 @@ with DAG(
         task_id='start_pipeline',
         bash_command='echo "Starting the full data pipeline... (This is a placeholder)"',
     )
+EOF
+fi
+
+# Create placeholder dbt profiles.yml if it doesn't exist
+if [ ! -f "./dbt_profiles/profiles.yml" ]; then
+  cat <<EOF > "./dbt_profiles/profiles.yml"
+data_platform_project:
+  target: dev
+  outputs:
+    dev:
+      type: spark
+      method: thrift
+      host: "{{ env_var('DBT_SPARK_HOST') }}"
+      port: "{{ env_var('DBT_SPARK_PORT') | int }}"
+      schema: "{{ env_var('DBT_SPARK_SCHEMA') }}"
+      catalog: "{{ env_var('DBT_SPARK_CATALOG') }}"
+      connect_options:
+        spark.hadoop.fs.s3a.endpoint: "{{ env_var('DBT_SPARK_S3_ENDPOINT') }}"
+        spark.hadoop.fs.s3a.access.key: "{{ env_var('DBT_SPARK_AWS_ACCESS_KEY_ID') }}"
+        spark.hadoop.fs.s3a.secret.key: "{{ env_var('DBT_SPARK_AWS_SECRET_ACCESS_KEY') }}"
+        spark.hadoop.fs.s3a.path.style.access: "true"
+        spark.hadoop.fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+        spark.hadoop.fs.s3a.connection.ssl.enabled: "false"
+        spark.sql.extensions: "io.delta.sql.DeltaSparkSessionExtension"
+        spark.sql.catalog.spark_catalog: "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+      meta_host: "{{ env_var('DBT_PG_HOST') }}"
+      meta_port: "{{ env_var('DBT_PG_PORT') | int }}"
+      meta_user: "{{ env_var('DBT_PG_USER') }}"
+      meta_password: "{{ env_var('DBT_PG_PASSWORD') }}"
+      meta_dbname: "{{ env_var('DBT_PG_DBNAME') }}"
 EOF
 fi
 
@@ -157,6 +161,11 @@ echo "MinIO buckets created and webhook configured. Restarting MinIO for webhook
 docker compose restart minio
 echo "MinIO restarted."
 
+# --- 9. Verify dbt connection ---
+echo "--- Verifying dbt connection to Spark and Postgres ---"
+docker compose exec dbt dbt debug --profiles-dir /usr/app/dbt_profiles
+echo "dbt debug command executed. Check output for successful connection."
+
 # --- 9. Initial MongoDB Data (Optional) ---
 echo "--- (Optional) Initializing MongoDB with Sample Data ---"
 echo "If MongoDB is critical for your initial setup, you might insert data here."
@@ -183,7 +192,7 @@ for service in "${services_to_check[@]}"; do
     "airflow-webserver") HEALTH_URL="http://localhost:8080/health";;
     "grafana") HEALTH_URL="http://localhost:3000/api/health";;
     "spline-ui") HEALTH_URL="http://localhost:9090/";; # Spline UI doesn't have a specific /health API on / endpoint itself
-    "openmetadata-server") HEALTH_URL="http://localhost:8585/api/v1/health";;
+    "openmetadata-server") HEALTH_URL="http://localhost:8586/healthcheck";;
     "spark-history-server") HEALTH_URL="http://localhost:18080";;
     *) HEALTH_URL="";; # Default to empty for unknown services
   esac
@@ -217,6 +226,7 @@ echo "🚀 Airflow UI:           http://localhost:8080 (User: admin, Pass: admin
 echo "📊 Grafana UI:           http://localhost:3000 (User: admin, Pass: admin)"
 echo "⛓️ Spline UI:            http://localhost:9090"
 echo "📚 OpenMetadata UI:      http://localhost:8585 (User: admin, Pass: admin)"
+echo "🛠️ dbt CLI:              Run commands via 'docker compose exec dbt dbt <command>'"
 echo "🎨 Superset UI:          http://localhost:8088 (User: admin, Pass: admin)"
 echo "📈 cAdvisor (raw):       http://localhost:8083"
 echo "------------------------------------------------------------------------"

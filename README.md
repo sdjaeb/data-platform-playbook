@@ -45,6 +45,7 @@ This project leverages the following open-source technologies, which are central
 *   **Apache Airflow:** Workflow orchestration platform to schedule and monitor data pipelines.
 *   **Apache Superset:** Data visualization and business intelligence platform.
 *   **Spline:** Automated data lineage tracking for Apache Spark jobs.
+*   **dbt (data build tool):** For managing data transformations and defining data models.
 *   **OpenMetadata:** Unified data catalog for data discovery and governance.
 *   **Grafana Stack (Grafana, Loki, Prometheus, Alloy):** A full observability suite for visualizing metrics, logs, and traces.
 *   **LocalStack:** Emulates AWS services for local cloud development.
@@ -112,6 +113,7 @@ Once the `bootstrap.sh` script completes, you can access the following UIs:
 | Grafana UI           | `http://localhost:3000`                  | `admin` / `admin`         |
 | Spline UI            | `http://localhost:9090`                  | N/A                       |
 | OpenMetadata UI      | `http://localhost:8585`                  | `admin` / `admin`         |
+| dbt CLI              | N/A (CLI tool)                           | N/A                       |
 | Superset UI          | `http://localhost:8088`                  | `admin` / `admin`         |
 | cAdvisor (raw)       | `http://localhost:8083`                  | N/A                       |
 
@@ -128,7 +130,17 @@ Follow these steps to see the platform in action:
 
 3.  **Run Transformation Pipeline:** In the Airflow UI (`http://localhost:8080`), unpause and trigger the `full_pipeline_with_governance` DAG. This will orchestrate a Spark batch job to transform the raw data and write it to the `curated-data-bucket`.
 
-4.  **Explore & Monitor:**
+4.  **Run dbt Transformations:**
+    dbt is integrated to manage your data transformations. You can execute dbt commands directly within its container.
+    ```bash
+    # Access the dbt container and run a debug command to verify connection
+    docker compose exec dbt dbt debug --profiles-dir /usr/app/dbt_profiles
+
+    # Once you have a dbt project, you can run models:
+    # docker compose exec dbt dbt run --profiles-dir /usr/app/dbt_profiles
+    ```
+
+5.  **Explore & Monitor:**
     *   **OpenMetadata:** See the new tables and view their end-to-end data lineage.
     *   **Superset:** Connect to the curated data and build dashboards.
     *   **Grafana:** View dashboards monitoring container health and application metrics.

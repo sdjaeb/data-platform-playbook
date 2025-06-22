@@ -1,0 +1,29 @@
+# dbt_profiles/profiles.yml
+# This file defines how dbt connects to your data warehouse and metadata store.
+
+data_platform_project: # This is your dbt project name (can be anything)
+  target: dev
+  outputs:
+    dev:
+      type: spark
+      method: thrift
+      host: "{{ env_var('DBT_SPARK_HOST') }}"
+      port: "{{ env_var('DBT_SPARK_PORT') | int }}"
+      schema: "{{ env_var('DBT_SPARK_SCHEMA') }}"
+      catalog: "{{ env_var('DBT_SPARK_CATALOG') }}"
+      connect_options:
+        # For Delta Lake on MinIO
+        spark.hadoop.fs.s3a.endpoint: "{{ env_var('DBT_SPARK_S3_ENDPOINT') }}"
+        spark.hadoop.fs.s3a.access.key: "{{ env_var('DBT_SPARK_AWS_ACCESS_KEY_ID') }}"
+        spark.hadoop.fs.s3a.secret.key: "{{ env_var('DBT_SPARK_AWS_SECRET_ACCESS_KEY') }}"
+        spark.hadoop.fs.s3a.path.style.access: "true"
+        spark.hadoop.fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+        spark.hadoop.fs.s3a.connection.ssl.enabled: "false"
+        spark.sql.extensions: "io.delta.sql.DeltaSparkSessionExtension"
+        spark.sql.catalog.spark_catalog: "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+      # For dbt's internal metadata store (PostgreSQL)
+      meta_host: "{{ env_var('DBT_PG_HOST') }}"
+      meta_port: "{{ env_var('DBT_PG_PORT') | int }}"
+      meta_user: "{{ env_var('DBT_PG_USER') }}"
+      meta_password: "{{ env_var('DBT_PG_PASSWORD') }}"
+      meta_dbname: "{{ env_var('DBT_PG_DBNAME') }}"

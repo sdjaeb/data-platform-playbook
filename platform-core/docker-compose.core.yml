@@ -20,6 +20,8 @@ services:
       - postgres_pass
       - superset_db_user
       - superset_db_pass
+      - dbt_db_user
+      - dbt_db_pass
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d # Script to create Superset DB on init

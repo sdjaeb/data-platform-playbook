@@ -29,6 +29,7 @@ volumes:
   openmetadata_es_data: # For OpenMetadata's Elasticsearch/OpenSearch data
 
   # Spline specific volumes
+  dbt_projects_data: # For dbt project files
   arangodb_data: # For Spline's ArangoDB database
 
   # Superset specific volumes
@@ -65,6 +66,10 @@ secrets:
     file: ./secrets/superset_db_user.txt
   superset_db_pass: # Superset DB password
     file: ./secrets/superset_db_pass.txt
+  dbt_db_user: # dbt DB user
+    file: ./secrets/dbt_db_user.txt
+  dbt_db_pass: # dbt DB password
+    file: ./secrets/dbt_db_pass.txt
 
 # Defines configuration files that can be mounted into services, allowing for dynamic configuration.
 configs:
