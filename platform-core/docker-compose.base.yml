@@ -1,0 +1,109 @@
+version: '3.8'
+
+# Defines the virtual networks that allow services to communicate with each other.
+networks:
+  observability_network:
+    driver: bridge
+  data_platform_network:
+    driver: bridge
+
+# Defines named volumes to persist data, ensuring that state is not lost when containers are restarted.
+volumes:
+  # General purpose volumes
+  postgres_data: # For Airflow's metadata DB and potentially other structured data
+  minio_data: # For MinIO object storage (Data Lake)
+  mongo_data: # For MongoDB data
+  spark_events: # For Spark History Server logs
+  dags: # For Airflow DAG files
+  plugins: # For Airflow plugins
+  airflow_logs: # For Airflow task logs
+  ingestion-scripts: # For OpenMetadata ingestion scripts
+  grafana_data: # For Grafana persistent data
+  prometheus_data: # For Prometheus time-series data
+  jaeger_data: # For Jaeger trace data
+  localstack_data: # For LocalStack persistent data
+  loki_data: # For Loki persistent data (logs) - This volume is correctly defined here.
+
+  # OpenMetadata specific volumes
+  openmetadata_db_data: # For OpenMetadata's PostgreSQL database
+  openmetadata_es_data: # For OpenMetadata's Elasticsearch/OpenSearch data
+
+  # Spline specific volumes
+  arangodb_data: # For Spline's ArangoDB database
+
+  # Superset specific volumes
+  superset_db_data: # For Superset's PostgreSQL metadata database
+  superset_app_data: # For Superset's application data/uploads
+
+# Defines secrets to securely manage sensitive information like usernames and passwords, mounting them from files.
+secrets:
+  postgres_user:
+    file: ./secrets/postgres_user.txt
+  postgres_pass:
+    file: ./secrets/postgres_pass.txt
+  minio_user:
+    file: ./secrets/minio_user.txt
+  minio_pass:
+    file: ./secrets/minio_pass.txt
+  redis_pass:
+    file: ./secrets/redis_pass.txt
+  airflow_db_url: # URL for Airflow DB (PostgreSQL)
+    file: ./secrets/airflow_db_url.txt
+  redis_url: # URL for Redis (Airflow Celery Broker)
+    file: ./secrets/redis_url.txt
+  airflow_fernet: # Fernet key for Airflow
+    file: ./secrets/airflow_fernet.txt
+  om_db_user: # OpenMetadata DB user (for PostgreSQL)
+    file: ./secrets/om_db_user.txt
+  om_db_pass: # OpenMetadata DB password (for PostgreSQL)
+    file: ./secrets/om_db_pass.txt
+  om_es_user: # OpenMetadata Elasticsearch/OpenSearch user
+    file: ./secrets/om_es_user.txt
+  om_es_pass: # OpenMetadata Elasticsearch/OpenSearch password
+    file: ./secrets/om_es_pass.txt
+  superset_db_user: # Superset DB user
+    file: ./secrets/superset_db_user.txt
+  superset_db_pass: # Superset DB password
+    file: ./secrets/superset_db_pass.txt
+
+# Defines configuration files that can be mounted into services, allowing for dynamic configuration.
+configs:
+  prometheus_yml:
+    file: ./prometheus.yml # Corrected path to be relative to the docker-compose file
+  grafana_datasources_yml:
+    file: ./observability/grafana_datasources.yml
+  grafana_dashboards_yml:
+    file: ./observability/grafana_dashboards.yml
+  loki_config_yml:
+    file: ./observability/loki-config.yml
+  promtail_config_yml:
+    file: ./observability/promtail-config.yml
+  grafana_alloy_config_river:
+    file: ./config/grafana-alloy.river # Corrected path based on file location
+
+# Airflow common settings (used as an anchor for reuse across all Airflow services)
+x-airflow-common: &airflow-common
+  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.0.2} # Use Airflow 3.0.2 as specified in todo.txt
+  environment: &airflow-common-env
+    # Core Airflow configurations
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow # Connects to the 'postgres' service
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0 # Connects to the 'redis' service
+    AIRFLOW__CORE__FERNET_KEY: '' # Should be set via secret in production
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    # Additional Python packages for Airflow
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+  volumes:
+    - dags:/opt/airflow/dags # Mount DAGs from host
+    - airflow_logs:/opt/airflow/logs # Mount logs from host
+    - ./config:/opt/airflow/config # Mount Airflow config from host
+    - plugins:/opt/airflow/plugins # Mount plugins from host
+  user: "${AIRFLOW_UID:-50000}:0" # Set user to prevent permission issues
+  networks:
+    - data_platform_network

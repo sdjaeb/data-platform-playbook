@@ -1,259 +1,165 @@
 # Modern Data Stack Lab: Local & Learn
 
-NOTE: This repository is a first draft, a work in progress, designed to facilitate learning and preparation for Data Engineering interviews by providing hands-on experience with a modern data stack.
+This repository contains a Docker Compose-based local development environment for building and understanding a modern, enterprise-ready data platform. It's designed for hands-on experience with core data engineering technologies, covering ingestion, storage, processing, orchestration, governance, and observability.
 
-This repository contains a comprehensive guide and a Docker Compose-based local development environment for building and understanding a modern, enterprise-ready data platform. It emphasizes practical, hands-on experience with core data engineering technologies, covering ingestion, storage, processing, orchestration, observability, and governance.
-
-The `docs` folder has all the relevant documentation about this project:
-
-* deep dives: Detailed how-tos and explanations for specific platform components.
-
-* highlights: Focuses on showcasing a particular core component in the platform.
-
-* Building Enterprise-Ready Data Platforms v2.4.pdf: The "final" version that served as a basis for breaking down content.
-
-* Building Enterprise-Ready Data Platforms\_ Core Handbook v1.pdf: The starting point for the broken-up parts.
-
-* Data Platform \*: Earlier documentation that may have some overlap.
+The `docs` folder contains historical and deep-dive documentation that served as the basis for this project.
 
 ## Table of Contents
 
-1. [Purpose and Introduction](#1-purpose-and-introduction)
+1.  Core Architectural Concepts
+2.  Key Technologies
+3.  Getting Started
+    *   Prerequisites
+    *   Platform Architecture
+    *   Running the Full Stack
+    *   Running a Subset of Services
+4.  Platform Usage & Walkthrough
+    *   Accessing UIs
+    *   End-to-End Flow
+5.  Project Structure
+6.  Contributing
+7.  License
 
-2. [Core Architectural Concepts](#2-core-architectural-concepts)
-
-3. [Key Technologies](#3-key-technologies)
-
-4. [Getting Started (Local Environment Setup)](#4-getting-started-local-environment-setup)
-
-   * [Prerequisites](#prerequisites)
-
-   * [Quick Start](#quick-start)
-
-   * [Accessing UIs](#accessing-uis)
-
-5. [Platform Usage & Walkthrough](#5-platform-usage--walkthrough)
-
-6. [Deep Dives & Advanced Topics](#6-deep-dives--advanced-topics)
-
-7. [Project Structure](#7-project-structure)
-
-8. [Contributing](#8-contributing)
-
-9. [License](#9-license)
-
-## 1. Purpose and Introduction
-
-In today's data-driven world, enterprises require robust and scalable data platforms to ingest, process, store, and analyze vast amounts of data from diverse sources. This project provides a blueprint and a fully functional local environment that mirrors a production-grade data platform. It's designed for experienced Data Engineers and Senior Software Engineers to rapidly prototype, test, and understand complex distributed data systems without incurring cloud costs or dependencies.
-
-The guide meticulously covers:
-
-* Building a resilient local development environment.
-
-* Implementing Python-based ETL pipelines.
-
-* Adhering to modern architectural patterns and best practices, including Infrastructure as Code (IaC), CI/CD, comprehensive testing, data contracts, and observability.
-
-* Exploring advanced topics like Machine Learning (ML) tooling, AI/LLM integration, and cloud migration strategies.
-
-## 2. Core Architectural Concepts
+## 1. Core Architectural Concepts
 
 The platform is designed around a layered architecture, promoting modularity, scalability, and maintainability:
 
-* **Ingestion Layer:** Captures data from various sources, handling high throughput and diverse formats.
+*   **Ingestion Layer:** Captures data from various sources (e.g., APIs, event streams).
+*   **Storage Layer (Data Lakehouse):** Provides flexible, scalable, and transactional storage for raw, curated, and processed data.
+*   **Processing Layer:** Transforms, cleanses, and enriches data using a distributed computing framework.
+*   **Orchestration & Governance Layer:** Manages workflow dependencies, schedules jobs, and provides a data catalog, lineage, and quality insights.
+*   **Observability Layer:** Monitors system health, performance, and data flow, enabling proactive issue detection.
+*   **Consumption Layer:** Makes processed data available for analytics, reporting, and downstream applications.
 
-* **Storage Layer (Data Lakehouse):** Provides flexible, scalable, and transactional storage for raw, refined, and curated data.
-
-* **Processing Layer:** Transforms, cleanses, and enriches data using distributed computing frameworks.
-
-* **Orchestration & Governance Layer:** Manages workflow dependencies, schedules jobs, and provides data catalog, lineage, and quality insights.
-
-* **Observability Layer:** Monitors system health, performance, and data flow, enabling proactive issue detection.
-
-* **Consumption Layer:** Makes processed data available for analytics, reporting, and downstream applications.
-
-## 3. Key Technologies
+## 2. Key Technologies
 
 This project leverages the following open-source technologies, which are central to modern data platforms:
 
-* **FastAPI:** High-performance web framework for building data ingestion APIs.
+*   **FastAPI:** High-performance web framework for building data ingestion APIs.
+*   **Apache Kafka:** Distributed streaming platform for real-time data ingestion.
+*   **Apache Spark:** Unified analytics engine for large-scale data processing.
+*   **Delta Lake:** Storage layer bringing ACID transactions to the data lake.
+*   **MinIO:** High-performance, S3-compatible object storage for the local data lake.
+*   **PostgreSQL:** Central relational database for application metadata (Airflow, Superset).
+*   **MongoDB:** NoSQL document database for semi-structured data.
+*   **Apache Airflow:** Workflow orchestration platform to schedule and monitor data pipelines.
+*   **Apache Superset:** Data visualization and business intelligence platform.
+*   **Spline:** Automated data lineage tracking for Apache Spark jobs.
+*   **OpenMetadata:** Unified data catalog for data discovery and governance.
+*   **Grafana Stack (Grafana, Loki, Prometheus, Alloy):** A full observability suite for visualizing metrics, logs, and traces.
+*   **LocalStack:** Emulates AWS services for local cloud development.
 
-* **Apache Kafka:** Distributed streaming platform for real-time data ingestion and decoupled architecture.
-
-* **Apache Spark:** Unified analytics engine for large-scale data processing (batch and streaming).
-
-* **Delta Lake:** Open-source storage layer that brings ACID transactions, schema enforcement, and time travel to data lakes (on MinIO).
-
-* **MinIO:** High-performance, S3-compatible object storage for local data lake simulation.
-
-* **PostgreSQL:** Robust relational database for application metadata, reference data, and Apache Airflow's metastore.
-
-* **MongoDB:** Flexible NoSQL document database for semi-structured data, event logs, or specific application use cases (e.g., data processed by `mongo_processor.py`).
-
-* **Apache Airflow:** Workflow orchestration platform to programmatically author, schedule, and monitor data pipelines.
-
-* **Spline:** Automated data lineage tracking for Apache Spark jobs.
-
-* **OpenMetadata:** Unified data catalog, data lineage, and data quality platform for data discovery and governance.
-
-* **Grafana Alloy:** OpenTelemetry Collector distribution for unified telemetry (metrics, logs, traces) collection. Collects, processes, and exports telemetry data (metrics, logs, traces) from your applications and infrastructure.
-
-* **Grafana:** Open-source platform for interactive data visualization, monitoring, and alerting.
-
-* **cAdvisor:** Container Advisor for monitoring resource usage and performance of Dockerized services.
-
-* **MinIO Webhook Listener:** A custom Flask application that receives MinIO object lifecycle events, demonstrating event-driven architecture patterns.
-
-* **AWS SAM CLI:** (Conceptual integration) Local development tool for serverless applications.
-
-* **Locust:** (Conceptual integration) Open-source load testing tool.
-
-## 4. Getting Started (Local Environment Setup)
-
-This section guides you through setting up the complete data platform on your local machine using Docker Compose.
+## 3. Getting Started
 
 ### Prerequisites
 
 Ensure you have the following installed on your machine:
 
-* **Docker Desktop** (or Docker Engine on Linux): For running containers.
+*   **Docker & Docker Compose v2+**
+*   **Git**
+*   **Python 3.x**
 
-* **Git:** For cloning this repository.
+### Platform Architecture
 
-* **Python 3.x:** With `pip` for running scripts and managing Python dependencies.
+This project uses a modular Docker Compose setup located in the `platform-core/` directory. Service definitions are split across multiple `docker-compose.*.yml` files, each representing a logical component of the data platform (e.g., `core`, `processing`, `orchestration`).
 
-* **Docker Compose (v2+ CLI, i.e., 'docker compose')**: For orchestrating multi-container applications.
+A top-level `platform-core/docker-compose.yml` file uses the `include` directive to assemble the entire platform.
 
-* **AWS SAM CLI:** (Optional, for serverless examples; install if you plan to use `sam_lambda` features).
+### Running the Full Stack
 
-### Quick Start
+The easiest way to run the entire platform is by using the bootstrap script. It handles prerequisite checks, directory setup, and brings up all services in the correct order.
 
-1. **Clone the Repository:**
+From the root of the repository, run:
 
-        git clone <your-repo-url>/data-ingestion-platform.git
-        cd data-ingestion-platform
+```bash
+cd platform-core
+./scripts/bootstrap.sh
+```
 
-2. **Run the Bootstrap Script:**
-This comprehensive script will perform prerequisite checks, create necessary project directories, download external dependencies (like Spline JARs), build custom Docker images, bring up all Docker Compose services, and perform initial setup steps for Airflow (DB migration, admin user), Kafka (topic creation), and MinIO (bucket creation, webhook configuration).
+This command will take several minutes as it builds images and starts all services. Monitor the output for progress.
 
-        chmod +x bootstrap.sh
-        ./bootstrap.sh
+### Running a Subset of Services
 
-*This command will take several minutes as it builds images and starts numerous services. Monitor the output for progress and any errors.*
+The primary benefit of the modular architecture is the ability to run only the parts of the platform you need, saving system resources.
+
+To do this, you specify the desired `docker-compose.*.yml` files using the `-f` flag. You must **always** include `docker-compose.base.yml`.
+
+**Example: Run only the core databases and the Spark processing stack:**
+
+```bash
+cd platform-core
+
+docker compose \
+  -f docker-compose.base.yml \
+  -f docker-compose.core.yml \
+  -f docker-compose.processing.yml \
+  up -d
+```
+
+## 4. Platform Usage & Walkthrough
 
 ### Accessing UIs
 
-Once the `bootstrap.sh` script completes and services become healthy, you can access the following UIs in your web browser:
+Once the `bootstrap.sh` script completes, you can access the following UIs:
 
-* **FastAPI Docs (Swagger UI):** `http://localhost:8000/docs`
+| Service              | URL                                      | Credentials (User / Pass) |
+| -------------------- | ---------------------------------------- | ------------------------- |
+| FastAPI Docs         | `http://localhost:8000/docs`             | N/A                       |
+| MinIO Console        | `http://localhost:9001`                  | `minioadmin` / `minioadmin` |
+| Spark Master UI      | `http://localhost:8081`                  | N/A                       |
+| Spark History Server | `http://localhost:18080`                 | N/A                       |
+| Airflow UI           | `http://localhost:8080`                  | `admin` / `admin`         |
+| Grafana UI           | `http://localhost:3000`                  | `admin` / `admin`         |
+| Spline UI            | `http://localhost:9090`                  | N/A                       |
+| OpenMetadata UI      | `http://localhost:8585`                  | `admin` / `admin`         |
+| Superset UI          | `http://localhost:8088`                  | `admin` / `admin`         |
+| cAdvisor (raw)       | `http://localhost:8083`                  | N/A                       |
 
-* **MinIO Console:** `http://localhost:9001` (User: `minioadmin`, Pass: `minioadmin`)
+### End-to-End Flow
 
-* **Spark Master UI:** `http://localhost:8088` (Check Spark job status, not for applications)
+Follow these steps to see the platform in action:
 
-* **Spark History Server:** `http://localhost:18080` (After Spark jobs run, for historical job details)
+1.  **Generate Data:** In a new terminal, run the data simulator to send data to the FastAPI endpoint.
+    ```bash
+    python3 simulate_data.py
+    ```
 
-* **Airflow UI:** `http://localhost:8081` (User: `admin`, Pass: `admin`)
+2.  **Observe Ingestion:** Data flows from the simulator to FastAPI, which produces messages to Kafka. A Spark streaming job consumes these messages and writes the raw data as Delta tables into the `raw-data-bucket` in MinIO.
 
-* **Grafana UI:** `http://localhost:3000` (User: `admin`, Pass: `admin`)
+3.  **Run Transformation Pipeline:** In the Airflow UI (`http://localhost:8080`), unpause and trigger the `full_pipeline_with_governance` DAG. This will orchestrate a Spark batch job to transform the raw data and write it to the `curated-data-bucket`.
 
-* **Spline UI:** `http://localhost:9090`
+4.  **Explore & Monitor:**
+    *   **OpenMetadata:** See the new tables and view their end-to-end data lineage.
+    *   **Superset:** Connect to the curated data and build dashboards.
+    *   **Grafana:** View dashboards monitoring container health and application metrics.
 
-* **OpenMetadata UI:** `http://localhost:8585`
+## 5. Project Structure
 
-## 5. Platform Usage & Walkthrough
-
-After the environment is up, you can start interacting with the platform:
-
-1. **Generate Data:**
-The `simulate_data.py` script sends mock financial transactions and insurance claims to the FastAPI ingestor.
-
-        python3 simulate_data.py
-
-Keep this running in a separate terminal to provide continuous data flow.
-
-2. **Observe Data Flow:**
-
-* **FastAPI Logs:** Check `docker compose logs fastapi_ingestor` to see incoming requests and Kafka messages being sent.
-
-* **Kafka Consumption (Spark):** The Spark streaming job (`streaming_consumer.py`) continuously consumes from Kafka and writes to MinIO. Monitor `docker compose logs spark` or Spark UI to see this.
-
-* **MinIO Console:** Observe new files appearing in `raw-data-bucket/financial_data_delta/` and `raw-data-bucket/insurance_data_delta/`.
-
-3. **Run ETL/ELT Jobs:**
-
-* **Airflow Orchestration:** Trigger the `full_pipeline_with_governance` DAG (or `openmetadata_ingestion_dag`) in the Airflow UI (`http://localhost:8081`). This DAG orchestrates Spark jobs for ingestion and transformation, and also triggers metadata ingestion.
-
-* **MinIO Console:** See transformed data appear in `curated-data-bucket/`.
-
-4. **Monitor with Grafana:**
-
-* Explore dashboards in Grafana (`http://localhost:3000`) to visualize API request rates, Kafka consumer lag, Spark resource utilization, and overall container health.
-
-5. **Explore Data Catalog & Lineage with OpenMetadata/Spline:**
-
-* Access OpenMetadata (`http://localhost:8585`) to browse data assets, view schemas, and inspect data lineage for your Spark-processed tables.
-
-## 6. Deep Dives & Advanced Topics
-
-This project is accompanied by a series of "Deep Dive" documents that provide detailed explanations and interactive how-tos for specific aspects of the platform:
-
-* **Deep Dive: ML Tooling in the Platform:** Explores feature engineering, model training, and inference using Spark and your data lakehouse.
-
-* **Deep Dive: Integrating AI/LLMs/MLOps:** Covers data preparation for RAG, LLM interaction via API gateways, and MLOps principles for AI/LLM workloads.
-
-* **Deep Dive: Applying Platform Concepts to Snowflake:** Maps local open-source components to their Snowflake equivalents and demonstrates data ingestion and transformation in Snowflake.
-
-* **Deep Dive: Cloud Component Comparison (AWS, Azure, GCP):** Provides a high-level comparison of managed service equivalents across the major cloud providers.
-
-Refer to these documents for detailed explanations and guided exercises.
-
-## 7. Project Structure
-
-The repository is organized to logically separate different components and concerns:
-
+The repository is organized to logically separate different components:
 
 ```
-data-ingestion-platform/
-├── .github/                 # GitHub Actions CI/CD workflows
-│   └── workflows/
-├── data/                    # Persistent Docker volumes for all services
-│   ├── postgres/
-│   ├── mongodb/
-│   ├── minio/
-│   ├── spark-events/
-│   ├── grafana/
-│   ├── openmetadata_mysql/
-│   ├── openmetadata_elasticsearch/
-│   └── spline_jars/         # Downloaded Spline agent JARs for Spark integration
-├── src/                     # Core Python application logic (e.g., common utilities, data models)
-│   └── common/
-│   └── models/              # Pydantic/Avro schemas for data contracts
-├── fastapi_app/             # FastAPI ingestion service (Docker context, app code, tests)
-│   ├── app/                 # FastAPI application source
-│   ├── tests/               # Unit and integration tests
-│   └── Dockerfile
-│   └── requirements.txt
-├── pyspark_jobs/            # Apache Spark transformation jobs (PySpark scripts)
-│   ├── tests/               # Unit and contract tests for Spark jobs
-├── airflow_dags/            # Apache Airflow DAG definitions
-├── observability/           # Grafana dashboards, Grafana Alloy configurations
-├── openmetadata_ingestion_scripts/ # Python scripts for OpenMetadata connectors
-├── terraform_infra/         # Infrastructure as Code (IaC) using Terraform
-│   ├── modules/             # Reusable Terraform modules for AWS services
-│   ├── environments/        # Environment-specific Terraform configurations (dev, staging, prod)
-├── sam_lambda/              # AWS SAM CLI local serverless development examples
-├── load_testing/            # Locust load test scripts
-├── scripts/                 # Utility scripts (e.g., simulate_data.py)
-├── webhook_listener_app/    # Custom Flask application to receive MinIO webhook events
-└── docker-compose.yml       # Central Docker Compose file for local environment
-└── docker-compose.test.yml  # Docker Compose for integration testing
-└── README.md                # This document
+.
+├── platform-core/            # Contains all Docker Compose files, configs, and scripts
+│   ├── airflow_dags/         # Airflow DAG definitions
+│   ├── config/               # Shared configuration files (e.g., Grafana Alloy)
+│   ├── fastapi_app/          # FastAPI ingestion service
+│   ├── observability/        # Grafana dashboards and provisioning files
+│   ├── postgres-init/        # Initialization scripts for PostgreSQL
+│   ├── pyspark_jobs/         # Spark transformation jobs
+│   ├── scripts/              # Helper scripts (e.g., bootstrap.sh)
+│   ├── secrets/              # Secret files (placeholders)
+│   ├── superset_config/      # Superset configuration
+│   ├── webhook_listener_app/ # MinIO webhook listener service
+│   └── docker-compose.*.yml  # Modular Docker Compose files
+├── docs/                     # Historical and deep-dive documentation
+├── simulate_data.py          # Script to generate sample data
+└── README.md                 # This file
 ```
-## 8. Contributing
+
+## 6. Contributing
 
 Contributions are welcome! If you find issues or have suggestions for improvements, please open an issue or submit a pull request.
 
-## 9. License
+## 7. License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.

@@ -1,0 +1,1243 @@
+
+# Networks for inter-service communication
+networks:
+  observability_network:
+    driver: bridge
+  data_platform_network:
+    driver: bridge
+
+# Named Volumes for data persistence across container restarts
+volumes:
+  # General purpose volumes
+  postgres_data: # For Airflow's metadata DB and potentially other structured data
+  minio_data: # For MinIO object storage (Data Lake)
+  mongo_data: # For MongoDB data
+  spark_events: # For Spark History Server logs
+  dags: # For Airflow DAG files
+  plugins: # For Airflow plugins
+  airflow_logs: # For Airflow task logs
+  ingestion-scripts: # For OpenMetadata ingestion scripts
+  grafana_data: # For Grafana persistent data
+  prometheus_data: # For Prometheus time-series data
+  jaeger_data: # For Jaeger trace data
+  localstack_data: # For LocalStack persistent data
+  loki_data: # For Loki persistent data (logs) - This volume is correctly defined here.
+
+  # OpenMetadata specific volumes
+  openmetadata_db_data: # For OpenMetadata's PostgreSQL database
+  openmetadata_es_data: # For OpenMetadata's Elasticsearch/OpenSearch data
+
+  # Spline specific volumes
+  arangodb_data: # For Spline's ArangoDB database
+
+  # Superset specific volumes
+  superset_db_data: # For Superset's PostgreSQL metadata database
+  superset_app_data: # For Superset's application data/uploads
+
+# Docker Secrets for sensitive information (e.g., passwords)
+secrets:
+  postgres_user:
+    file: ./secrets/postgres_user.txt
+  postgres_pass:
+    file: ./secrets/postgres_pass.txt
+  minio_user:
+    file: ./secrets/minio_user.txt
+  minio_pass:
+    file: ./secrets/minio_pass.txt
+  redis_pass:
+    file: ./secrets/redis_pass.txt
+  airflow_db_url: # URL for Airflow DB (PostgreSQL)
+    file: ./secrets/airflow_db_url.txt
+  redis_url: # URL for Redis (Airflow Celery Broker)
+    file: ./secrets/redis_url.txt
+  airflow_fernet: # Fernet key for Airflow
+    file: ./secrets/airflow_fernet.txt
+  om_db_user: # OpenMetadata DB user (for PostgreSQL)
+    file: ./secrets/om_db_user.txt
+  om_db_pass: # OpenMetadata DB password (for PostgreSQL)
+    file: ./secrets/om_db_pass.txt
+  om_es_user: # OpenMetadata Elasticsearch/OpenSearch user
+    file: ./secrets/om_es_user.txt
+  om_es_pass: # OpenMetadata Elasticsearch/OpenSearch password
+    file: ./secrets/om_es_pass.txt
+  superset_db_user: # Superset DB user
+    file: ./secrets/superset_db_user.txt
+  superset_db_pass: # Superset DB password
+    file: ./secrets/superset_db_pass.txt
+
+# Docker Configs for configuration files
+configs:
+  prometheus_yml:
+    file: ./prometheus.yml # Corrected path to be relative to the docker-compose file
+  grafana_datasources_yml:
+    file: ./observability/grafana_datasources.yml
+  grafana_dashboards_yml:
+    file: ./observability/grafana_dashboards.yml
+  loki_config_yml:
+    file: ./observability/loki-config.yml
+  promtail_config_yml:
+    file: ./observability/promtail-config.yml
+  grafana_alloy_config_river:
+    file: ./config/grafana-alloy.river # Corrected path based on file location
+
+
+# Airflow common settings (used as an anchor for reuse)
+x-airflow-common: &airflow-common
+  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.0.2} # Use Airflow 3.0.2 as specified in todo.txt
+  environment: &airflow-common-env
+    # Core Airflow configurations
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow # Connects to the 'postgres' service
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0 # Connects to the 'redis' service
+    AIRFLOW__CORE__FERNET_KEY: '' # Should be set via secret in production
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    # Additional Python packages for Airflow
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+  volumes:
+    - dags:/opt/airflow/dags # Mount DAGs from host
+    - airflow_logs:/opt/airflow/logs # Mount logs from host
+    - ./config:/opt/airflow/config # Mount Airflow config from host
+    - plugins:/opt/airflow/plugins # Mount plugins from host
+  user: "${AIRFLOW_UID:-50000}:0" # Set user to prevent permission issues
+  networks:
+    - data_platform_network
+
+services:
+  #################################
+  # Core Databases & Messaging    #
+  #################################
+
+  # PostgreSQL - Centralized database for Airflow metadata, OpenMetadata, and potentially other applications
+  postgres:
+    image: postgres:13 # Stable PostgreSQL version
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_pass
+      POSTGRES_DB: airflow # Default database for Airflow
+    secrets:
+      # Airflow secrets
+      - postgres_user
+      - postgres_pass
+      # Add Superset secrets so the init script can create the user/db
+      - superset_db_user
+      - superset_db_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persistent volume for data
+      - ./postgres-init:/docker-entrypoint-initdb.d # Mount the init script
+    networks:
+      - data_platform_network
+    healthcheck: # Healthcheck for PostgreSQL readiness
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "5432", "-U", "airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '512m'
+
+  # Redis - Used by Airflow (Celery Broker) and Superset (caching)
+  redis:
+    image: redis:6.2-alpine # Lightweight and stable Redis version
+    container_name: redis
+    restart: always
+    command: redis-server --requirepass $(cat /run/secrets/redis_pass) --appendonly yes
+    secrets:
+      - redis_pass
+    networks:
+      - data_platform_network
+    healthcheck: # Healthcheck for Redis readiness
+      test: ["CMD", "redis-cli", "-a", "$(cat /run/secrets/redis_pass)", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: '128m'
+
+  # Zookeeper - Required for Kafka cluster coordination (until Kafka fully moves to KRaft)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0 # Confluent's official Zookeeper image
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - data_platform_network
+    healthcheck: # Healthcheck for Zookeeper readiness
+      test: ["CMD-SHELL", "echo 'ruok' | nc localhost 2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: '256m'
+
+  # Kafka - Distributed streaming platform
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0 # Confluent's official Kafka image
+    container_name: kafka
+    ports:
+      - "9092:9092" # External port for Kafka clients
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181' # Connects to Zookeeper service
+      # Listeners configuration for internal and external access
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_HEAP_OPTS: "-Xms512M -Xmx512M" # Limit Kafka's JVM heap size
+    depends_on: # Ensure Zookeeper is healthy before Kafka starts
+      zookeeper:
+        condition: service_healthy
+    networks:
+      - data_platform_network
+    healthcheck: # Healthcheck for Kafka readiness
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:29092 --list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: '1g'
+
+  ##########################
+  # Object Storage (MinIO) #
+  ##########################
+  minio:
+    image: minio/minio:latest # Latest MinIO stable image
+    container_name: minio
+    restart: always
+    ports:
+      - "9000:9000" # MinIO API port
+      - "9001:9001" # MinIO Console UI port
+    environment:
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_pass
+    secrets:
+      - minio_user
+      - minio_pass
+    command: server /data --console-address ":9001" # Start MinIO server with console
+    volumes:
+      - minio_data:/data # Persistent volume for MinIO data
+    networks:
+      - data_platform_network
+    healthcheck: # Healthcheck for MinIO readiness
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '512m'
+
+  ##########################
+  # Document Store (MongoDB) #
+  ##########################
+  mongodb:
+    image: mongo:6.0.4 # Specific MongoDB version
+    container_name: mongodb
+    restart: always
+    ports:
+      - "27017:27017" # MongoDB default port
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example # WARNING: Change this for production!
+    volumes:
+      - mongo_data:/data/db # Persistent volume for MongoDB data
+    networks:
+      - data_platform_network
+    # mongo-express for UI is removed to simplify, but can be added if needed
+    healthcheck: # Healthcheck for MongoDB readiness
+      test: ["CMD-SHELL", "mongosh --eval 'db.adminCommand({ping:1})' --host localhost || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ################
+  # Spark Stack  #
+  ################
+  spark-master:
+    image: bitnami/spark:3.5.1 # Updated to a recent stable Spark version from bitnami
+    container_name: spark-master
+    restart: always
+    ports:
+      - "8081:8080" # Spark Master UI (changed to 8081 to avoid conflict with Airflow)
+      - "7077:7077" # Spark Master internal port
+    environment:
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no" # For local dev simplicity
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_DIRS: /tmp/spark-events # Directory for event logs
+      SPARK_HISTORY_FS_LOG_DIRECTORY: file:///opt/bitnami/spark/events # For history server
+      # Including common packages for Kafka and Delta Lake for convenience
+      SPARK_SUBMIT_ARGS: "--packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,io.delta:delta-core_2.12:2.4.0"
+    volumes:
+      - spark_events:/opt/bitnami/spark/events # Volume for Spark event logs
+      - ./pyspark_jobs:/opt/bitnami/spark/jobs # Mount PySpark job scripts
+    networks:
+      - data_platform_network
+    healthcheck: # Healthcheck for Spark Master UI
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8080' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s # Give Spark Master time to start
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '512m'
+
+  spark-worker:
+    image: bitnami/spark:3.5.1
+    container_name: spark-worker-1
+    restart: always
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_CORES: 1 # Allocate 1 CPU core
+      SPARK_WORKER_MEMORY: 1G # Allocate 1GB memory
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_DIRS: /tmp/spark-events
+      SPARK_HISTORY_FS_LOG_DIRECTORY: file:///opt/bitnami/spark/events
+      SPARK_SUBMIT_ARGS: "--packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,io.delta:delta-core_2.12:2.4.0"
+    volumes:
+      - spark_events:/opt/bitnami/spark/events
+      - ./pyspark_jobs:/opt/bitnami/spark/jobs
+    depends_on:
+      spark-master:
+        condition: service_healthy # Ensure Master is healthy before worker starts
+    networks:
+      - data_platform_network
+    healthcheck: # Healthcheck for Spark Worker UI (if exposed, else rely on master's view)
+      test: ["CMD-SHELL", "curl -f http://localhost:8081 || exit 1"] # Adjust if worker UI port differs
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: '1g'
+
+  spark-history-server:
+    image: bitnami/spark:3.5.1
+    container_name: spark-history-server
+    restart: always
+    ports:
+      - "18080:18080" # Spark History UI port
+    environment:
+      SPARK_MODE: history
+      SPARK_HISTORY_FS_LOG_DIRECTORY: file:///opt/bitnami/spark/events # Reads from shared events volume
+      SPARK_HISTORY_UI_PORT: 18080
+    volumes:
+      - spark_events:/opt/bitnami/spark/events
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    networks:
+      - data_platform_network
+    healthcheck: # Healthcheck for Spark History UI
+      test: ["CMD", "curl", "-f", "http://localhost:18080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '512m'
+
+  #####################
+  # Airflow (Celery)  #
+  #####################
+  airflow-init:
+    <<: *airflow-common # Inherit common Airflow settings
+    container_name: airflow-init
+    entrypoint: /bin/bash # Override entrypoint for initial setup
+    command:
+      - -c
+      - |
+        # Wait for PostgreSQL and Redis to be ready
+        echo "Waiting for PostgreSQL and Redis to be ready..."
+        /entrypoint.sh bash -c 'until pg_isready -h postgres -p 5432 -U airflow; do sleep 1; done;'
+        /entrypoint.sh bash -c 'until redis-cli -a $(cat /run/secrets/redis_pass) ping; do sleep 1; done;'
+
+        echo "Running Airflow DB migration..."
+        airflow db migrate
+
+        echo "Creating Airflow admin user..."
+        airflow users create --username admin --password admin --firstname Airflow --lastname Admin --role Admin --email admin@example.com || true
+
+        echo "Setting permissions on Airflow volumes..."
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/
+        chown -v -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/{logs,dags,plugins,config}
+
+        echo "Airflow initialization complete."
+    user: "0:0" # Run as root for initial permissions
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    secrets: # Access secrets for DB/Redis passwords
+      - postgres_user
+      - postgres_pass
+      - redis_pass
+      - airflow_db_url
+      - redis_url
+      - airflow_fernet
+    networks:
+      - data_platform_network
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: webserver # Start Airflow webserver
+    ports:
+      - "8080:8080" # Airflow UI (changed from 8081 in base to 8080 as it's the standard port and Spark Master is on 8081)
+    environment:
+      <<: *airflow-common-env
+      AIRFLOW__WEBSERVER__RBAC: 'True'
+      AIRFLOW__WEBSERVER__AUTHENTICATE: 'True'
+      AIRFLOW__WEBSERVER__BASE_URL: 'http://localhost:8080' # Reflects exposed port
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully # Ensures DB and user are ready
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    secrets:
+      - postgres_user
+      - postgres_pass
+      - redis_pass
+      - airflow_db_url
+      - redis_url
+      - airflow_fernet
+    networks:
+      - data_platform_network
+      - observability_network # Add to observability network for Grafana
+    healthcheck: # Healthcheck for webserver
+      test: ["CMD", "curl", "--silent", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '1g'
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    command: scheduler # Start Airflow scheduler
+    environment:
+      <<: *airflow-common-env
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    secrets:
+      - postgres_user
+      - postgres_pass
+      - redis_pass
+      - airflow_db_url
+      - redis_url
+      - airflow_fernet
+    networks:
+      - data_platform_network
+      - observability_network
+    healthcheck: # Healthcheck for scheduler
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: '1g'
+
+  airflow-worker:
+    <<: *airflow-common
+    container_name: airflow-worker
+    command: celery worker # Start Celery worker
+    environment:
+      <<: *airflow-common-env
+      DUMB_INIT_SETSID: "0" # Required for graceful shutdown
+    depends_on:
+      airflow-scheduler:
+        condition: service_healthy # Depends on scheduler for task queuing
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    secrets:
+      - postgres_user
+      - postgres_pass
+      - redis_pass
+      - airflow_db_url
+      - redis_url
+      - airflow_fernet
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: '1g'
+    networks:
+      - data_platform_network
+      - observability_network
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: airflow-dag-processor
+    command: dag-processor # Start DAG processor
+    environment:
+      <<: *airflow-common-env
+    depends_on:
+      airflow-scheduler:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    secrets:
+      - airflow_db_url
+      - redis_url
+      - airflow_fernet
+      - postgres_user
+      - postgres_pass
+    networks:
+      - data_platform_network
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type DagProcessorJob --hostname \"$${HOSTNAME}\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '768m'
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: airflow-triggerer
+    command: triggerer # Start triggerer for deferred tasks
+    environment:
+      <<: *airflow-common-env
+    depends_on:
+      airflow-scheduler:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    secrets:
+      - airflow_db_url
+      - redis_url
+      - airflow_fernet
+      - postgres_user
+      - postgres_pass
+    networks:
+      - data_platform_network
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type TriggererJob --hostname \"$${HOSTNAME}\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '512m'
+
+  ###########################
+  # FastAPI Ingestor        #
+  ###########################
+  fastapi-ingestor:
+    build:
+      context: ./fastapi_app # Assumes fastapi_app directory exists with Dockerfile
+    container_name: fastapi-ingestor
+    restart: always
+    ports:
+      - "8000:8000" # FastAPI application port
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092 # Connects to Kafka service
+      MONGODB_CONNECTION_STRING: mongodb://mongodb:27017/ # Connects to MongoDB service
+      MINIO_ENDPOINT: minio:9000 # Connects to MinIO service
+      MINIO_ACCESS_KEY_FILE: /run/secrets/minio_user
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_pass
+    secrets:
+      - minio_user
+      - minio_pass
+    depends_on: # Ensure dependencies are healthy before starting
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./fastapi_app:/app # Mount the FastAPI app code
+    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] # Command to run FastAPI
+    networks:
+      - data_platform_network
+      - observability_network # For metrics/logs scraping
+    healthcheck: # Healthcheck for FastAPI
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: '256m'
+
+  #################################
+  # Metadata Management (OpenMetadata)  #
+  #################################
+  # OpenMetadata PostgreSQL database (explicitly chosen over MySQL)
+  openmetadata-postgres:
+    image: postgres:13
+    container_name: openmetadata-postgres
+    restart: always
+    environment:
+      POSTGRES_USER_FILE: /run/secrets/om_db_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/om_db_pass
+      POSTGRES_DB: openmetadata_db # Database for OpenMetadata
+    secrets:
+      - om_db_user
+      - om_db_pass
+    volumes:
+      - openmetadata_db_data:/var/lib/postgresql/data
+    networks:
+      - data_platform_network
+    healthcheck:
+      # Use CMD-SHELL to correctly evaluate the secret file content. Note the double '$$' to escape the dollar sign for Compose.
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 5432 -d openmetadata_db -U $$(cat /run/secrets/om_db_user)"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '512m'
+
+  # OpenMetadata Elasticsearch (for search and indexing)
+  openmetadata-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.4 # Specific Elasticsearch version
+    container_name: openmetadata-elasticsearch
+    restart: always
+    environment:
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m" # Adjusted heap size
+      xpack.security.enabled: "false" # Disable security for simpler local setup
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - openmetadata_es_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200" # Elasticsearch HTTP port
+      - "9300:9300" # Elasticsearch Transport port
+    networks:
+      - data_platform_network
+    healthcheck: # Healthcheck for Elasticsearch
+      test: "curl -s http://localhost:9200/_cluster/health?pretty | grep status | grep -qE 'green|yellow' || exit 1"
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: '1g'
+
+  # OpenMetadata migration service (runs once to set up schema)
+  openmetadata-migrate-all:
+    image: docker.getcollate.io/openmetadata/server:1.7.5 # Use a specific OM server version
+    container_name: openmetadata-migrate-all
+    command: "./bootstrap/openmetadata-ops.sh migrate" # Migration command
+    environment:
+      # Database connection for migration
+      DB_DRIVER_CLASS: org.postgresql.Driver # Use PostgreSQL driver
+      DB_SCHEME: postgresql
+      DB_PARAMS: ""
+      DB_HOST: openmetadata-postgres # Connects to OM PostgreSQL service
+      DB_PORT: 5432
+      DB_USER: om_user # Hardcoded from om_db_user.txt
+      DB_USER_PASSWORD: om_pass # Hardcoded from om_db_pass.txt
+      OM_DATABASE: openmetadata_db
+      # Elasticsearch connection for migration
+      ELASTICSEARCH_HOST: openmetadata-elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      ELASTICSEARCH_SCHEME: http
+      ELASTICSEARCH_USER: om_es_user # Hardcoded from om_es_user.txt
+      ELASTICSEARCH_PASSWORD: om_es_pass # Hardcoded from om_es_pass.txt
+    depends_on:
+      openmetadata-postgres:
+        condition: service_healthy
+      openmetadata-elasticsearch:
+        condition: service_healthy
+    networks:
+      - data_platform_network
+    restart: "no" # This service should not restart after successful completion
+
+  # OpenMetadata server
+  openmetadata-server:
+    image: docker.getcollate.io/openmetadata/server:1.7.5
+    container_name: openmetadata-server
+    restart: always
+    ports:
+      - "8585:8585" # OpenMetadata UI port
+      - "8586:8586" # OpenMetadata Admin port
+    environment:
+      OPENMETADATA_CLUSTER_NAME: docker-cluster
+      # Database connection
+      DB_DRIVER_CLASS: org.postgresql.Driver # Use PostgreSQL driver
+      DB_SCHEME: postgresql
+      DB_PARAMS: ""
+      DB_HOST: openmetadata-postgres
+      DB_PORT: 5432
+      DB_USER: om_user # Hardcoded from om_db_user.txt, as OM image doesn't support _FILE vars
+      DB_USER_PASSWORD: om_pass # Hardcoded from om_db_pass.txt
+      OM_DATABASE: openmetadata_db
+      # Elasticsearch connection
+      ELASTICSEARCH_HOST: openmetadata-elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      ELASTICSEARCH_SCHEME: http
+      ELASTICSEARCH_USER: om_es_user # Hardcoded from om_es_user.txt
+      ELASTICSEARCH_PASSWORD: om_es_pass # Hardcoded from om_es_pass.txt
+      # Java opts for server memory
+      JAVA_OPTS: "-Xms256m -Xmx512m" # Adjusted heap size
+      # --- To disable security for local development ---
+      # Uncomment the following lines to disable login/authentication.
+      # AUTHENTICATION_PROVIDER: "no-auth"
+      # AUTHORIZER_CLASS_NAME: "org.openmetadata.service.security.NoopAuthorizer"
+      # -------------------------------------------------
+    depends_on:
+      openmetadata-postgres:
+        condition: service_healthy
+      openmetadata-elasticsearch:
+        condition: service_healthy
+      openmetadata-migrate-all: # Ensure migrations are complete
+        condition: service_completed_successfully
+    networks:
+      - data_platform_network
+      - observability_network
+    healthcheck: # Corrected healthcheck to use the admin port and /healthcheck endpoint
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8586/healthcheck || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: '1g'
+
+  # OpenMetadata Ingestion (for running connectors)
+  openmetadata-ingestion:
+    image: docker.getcollate.io/openmetadata/ingestion:1.7.5 # Match server version
+    container_name: openmetadata-ingestion
+    restart: always
+    depends_on:
+      openmetadata-server:
+        condition: service_healthy
+    volumes:
+      - ingestion-scripts:/opt/openmetadata/examples # Mount for ingestion scripts
+    environment:
+      OPENMETADATA_SERVER_URL: http://openmetadata-server:8585/api # Connects to OM server
+      # Add connection details for services to be ingested (e.g., MinIO, Kafka, Spark)
+      # These would typically be configured in your ingestion YAMLs, but listing here for context
+      # OM_MYSQL_HOST: openmetadata-mysql # Not needed as MySQL is excluded
+      OM_POSTGRES_HOST: openmetadata-postgres
+      OM_KAFKA_BROKERS: kafka:29092
+      OM_MINIO_ENDPOINT: minio:9000
+    networks:
+      - data_platform_network
+      - observability_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '1g'
+
+  #################################
+  # Data Lineage (Spline)         #
+  #################################
+  # ArangoDB - Database for Spline
+  arangodb:
+    image: arangodb:3.11.0 # Specific ArangoDB version for Spline
+    container_name: arangodb
+    restart: always
+    ports:
+      - "8529:8529" # ArangoDB web UI/API port
+    environment:
+      ARANGO_NO_AUTH: 1 # Disable auth for local dev simplicity
+    # Reduce resource usage for local development by limiting JS contexts and server threads.
+    command: >
+      arangod --javascript.v8-contexts 1 --server.threads 2
+    volumes:
+      - arangodb_data:/var/lib/arangodb3 # Persistent volume
+    networks:
+      - data_platform_network
+    healthcheck: # Healthcheck for ArangoDB readiness
+      test: ["CMD-SHELL", "arangosh --server.endpoint tcp://127.0.0.1:8529 --javascript.execute-string \"db._version();\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Spline DB Init - Initializes Spline schema in ArangoDB
+  spline-db-init:
+    platform: linux/amd64
+    image: absaoss/spline-admin:0.7.9 # <-- FIXED
+    container_name: spline-db-init
+    restart: "no"
+    entrypoint: >
+      tini -g -- bash -c "
+        until curl --output /dev/null --silent --get --fail http://arangodb:8529/_admin/server/availability
+        do
+          echo waiting for ArangoDB server to be ready...
+          sleep 5
+        done
+        exec bash ./entrypoint.sh db-init arangodb://arangodb/spline -s
+      "
+    depends_on:
+      arangodb:
+        condition: service_healthy # Ensure ArangoDB is healthy before starting REST server
+    networks:
+      - data_platform_network
+
+  # Spline REST Server - Receives lineage data from Spark agents
+  spline-rest-server:
+    platform: linux/amd64
+    image: absaoss/spline-rest-server:0.7.9 # <-- FIXED
+    container_name: spline-rest-server
+    restart: always
+    ports:
+      - "8082:8080" # Spline REST API (adjusted from 8080 to avoid conflicts)
+    environment:
+      SPLINE_DATABASE_CONNECTION_URL: 'arangodb://arangodb/spline' # Connects to ArangoDB
+      CATALINA_OPTS: "-Dsecurerandom.source=file:/dev/./urandom -Djava.security.egd=file:/dev/./urandom"
+    depends_on:
+      spline-db-init:
+        condition: service_completed_successfully # Ensure DB is initialized
+      arangodb:
+        condition: service_healthy # Ensure ArangoDB is healthy before starting REST server
+    networks:
+      - data_platform_network
+      - observability_network # For Prometheus/Grafana to scrape metrics
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8080' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '512m'
+
+  # Spline Web UI
+  spline-ui:
+    platform: linux/amd64
+    image: absaoss/spline-web-ui:latest
+    container_name: spline-ui
+    restart: always
+    environment:
+      SPLINE_CONSUMER_URL: 'http://${DOCKER_HOST_EXTERNAL:-localhost}:8082/consumer' # Connects to REST server
+      CATALINA_OPTS: "-Dsecurerandom.source=file:/dev/./urandom -Djava.security.egd=file:/dev/./urandom"
+    ports:
+      - "9090:8080" # Spline UI (adjusted from 8080 to avoid conflicts)
+    depends_on:
+      spline-rest-server:
+        condition: service_healthy
+    networks:
+      - data_platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: '256m'
+
+  #######################
+  # Observability Stack #
+  #######################
+  # cAdvisor - Container metrics collector
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0 # Specific cAdvisor version
+    container_name: cadvisor
+    privileged: true # Required for cAdvisor to access Docker daemon info
+    restart: always
+    ports:
+      - "8083:8080" # cAdvisor UI/metrics (adjusted from 8081 to avoid conflict)
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro # Removed confusing and likely ineffective machine-id mount.
+    networks:
+      - observability_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: '256m'
+
+  # Prometheus - Metrics collection and storage
+  prometheus:
+    image: prom/prometheus:v2.42.0 # Specific Prometheus version
+    container_name: prometheus
+    restart: always
+    ports:
+      - "9091:9090" # Prometheus UI (adjusted from 9090 to avoid conflict with Spline UI if needed)
+    configs:
+      - source: prometheus_yml
+        target: /etc/prometheus/prometheus.yml
+    command: >-
+      --config.file=/etc/prometheus/prometheus.yml
+      --web.enable-remote-write-receiver
+      --storage.tsdb.path=/prometheus
+      --web.enable-lifecycle
+      --web.route-prefix=/
+      --enable-feature=exemplar-storage
+    volumes:
+      - prometheus_data:/prometheus # Persistent volume for metrics data
+    networks:
+      - observability_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:9090/-/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '512m'
+
+  # Jaeger - Distributed tracing system (all-in-one for local dev)
+  jaeger:
+    image: jaegertracing/all-in-one:1.47 # All-in-one Jaeger for simplicity
+    container_name: jaeger
+    restart: always
+    ports:
+      - "4317:4317" # OTLP gRPC receiver
+      - "16686:16686" # Jaeger UI
+    volumes:
+      - jaeger_data:/badger # Persistent storage for traces (if needed)
+    networks:
+      - observability_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '512m'
+
+  # Grafana Alloy (OpenTelemetry Collector distribution)
+  grafana-alloy:
+    image: grafana/alloy:latest # Latest Grafana Alloy
+    container_name: grafana-alloy
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345 # Alloy's own HTTP server
+    restart: always
+    configs:
+      - source: grafana_alloy_config_river
+        target: /etc/alloy/config.alloy
+    depends_on:
+      - prometheus
+      - jaeger
+      - loki # Ensure Loki is defined below and available
+    ports:
+      - "12345:12345" # Alloy HTTP server for its UI/API
+    networks:
+      - observability_network
+    privileged: true # May be needed for certain scraping configs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: '256m'
+
+  # Loki - Log aggregation system
+  loki:
+    image: grafana/loki:latest # Latest Loki version
+    container_name: loki
+    restart: always
+    ports:
+      - "3100:3100" # Loki HTTP listener
+    command: -config.file=/etc/loki/local-config.yml
+    configs:
+      - source: loki_config_yml
+        target: /etc/loki/local-config.yml
+    volumes:
+      # Mount to /loki, the standard data directory for the Loki image, which has correct permissions.
+      - loki_data:/loki
+    networks:
+      - observability_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: '256m'
+
+  # Promtail - Agent for shipping logs to Loki
+  promtail:
+    image: grafana/promtail:latest # Latest Promtail version
+    container_name: promtail
+    restart: always
+    command: -config.file=/etc/promtail/promtail-config.yml
+    configs:
+      - source: promtail_config_yml
+        target: /etc/promtail/promtail-config.yml
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro # Mount Docker log directory
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Access Docker socket for container metadata
+    depends_on:
+      - loki
+    networks:
+      - observability_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: '128m'
+
+  # Grafana - Visualization and dashboards
+  grafana:
+    image: grafana/grafana:10.2.3 # Specific Grafana version
+    container_name: grafana
+    restart: always
+    ports:
+      - "3000:3000" # Grafana UI
+    volumes:
+      - grafana_data:/var/lib/grafana # Persistent volume for Grafana data
+      - ./observability/grafana_datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro # Provision datasources
+      - ./observability/grafana_dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro # Provision dashboards config
+      - ./observability/dashboards:/var/lib/grafana/dashboards # Mount custom dashboards
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true" # Enable anonymous access for local dev
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin # Grant admin role anonymously
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel,grafana-worldmap-panel" # Example plugins
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger
+      - cadvisor
+    networks:
+      - observability_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: '256m'
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/3000' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  ###########################
+  # Local AWS Emulation (LocalStack) #
+  ###########################
+  localstack:
+    image: localstack/localstack:latest # Latest LocalStack community edition
+    container_name: localstack
+    restart: always
+    ports:
+      - "4566:4566" # LocalStack Gateway
+      - "4510-4559:4510-4559" # Service-specific ports
+    environment:
+      # LOCALSTACK_AUTH_TOKEN: your-pro-token # Uncomment and set if using LocalStack Pro
+      SERVICES: s3,lambda,kafka,sqs,sns,apigateway,stepfunctions # Define services to run
+      DOCKER_HOST: unix:///var/run/docker.sock # Required for Lambda Docker integration
+      # Optionally, map external hostname if connecting from host not "localhost"
+      # HOSTNAME_EXTERNAL: ${DOCKER_HOST_EXTERNAL:-localhost}
+    volumes:
+      - localstack_data:/var/lib/localstack # Persistent data
+      - /var/run/docker.sock:/var/run/docker.sock # Mount Docker socket for Lambda
+      # - ./localstack_init_scripts:/docker-entrypoint-initaws.d # For init scripts (e.g., create S3 buckets)
+    networks:
+      - data_platform_network
+    healthcheck: # Healthcheck for LocalStack
+      test: ["CMD", "curl", "-f", "http://localhost:4566/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: '1g'
+
+  #################################
+  # Webhook Listener (Placeholder) #
+  #################################
+  # This service would typically be a custom app (e.g., Flask/Node.js)
+  # that listens for MinIO webhooks and triggers further actions.
+  # Assuming 'webhook_listener_app' directory exists with a Dockerfile
+  webhook-listener:
+    build: ./webhook_listener_app # Build context for your webhook listener
+    container_name: webhook-listener
+    restart: always
+    ports:
+      - "3001:8081" # Webhook listener port
+    environment:
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY_FILE: /run/secrets/minio_user
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_pass
+    secrets:
+      - minio_user
+      - minio_pass
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./webhook_listener_app:/app # Mount app code
+    # Replace with your application's actual command, e.g., python app.py
+    command: ["python", "app.py"] # Example for a Node.js app, adjust for Python/other
+    networks:
+      - data_platform_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: '128m'
+
+  #################################
+  # Business Intelligence (Apache Superset) #
+  #################################
+
+  # Superset initialization service (runs DB migrations and creates admin user)
+  superset-init:
+    image: apache/superset:3.1.1 # Specific Superset version
+    container_name: superset-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        # Wait for PostgreSQL and Redis to be ready
+        echo "Waiting for Superset PostgreSQL and Redis to be ready..."
+        /usr/bin/dumb-init bash -c 'until pg_isready -h postgres -p 5432 -U $(cat /run/secrets/superset_db_user); do sleep 1; done;'
+        /usr/bin/dumb-init bash -c 'until redis-cli -h redis -a $(cat /run/secrets/redis_pass) --raw INFO; do sleep 1; done;'
+
+        echo "Running Superset DB upgrade..."
+        superset db upgrade
+
+        echo "Creating Superset admin user..."
+        superset fab create-admin --username admin --password admin --firstname Superset --lastname Admin --email admin@superset.com || true
+
+        echo "Superset initialization complete."
+    environment:
+      SUPERSET_DATABASE_URI: postgresql+psycopg2://$(cat /run/secrets/superset_db_user):$(cat /run/secrets/superset_db_pass)@postgres:5432/superset
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LOAD_EXAMPLES: "False" # Set to "True" to load example datasets
+    secrets:
+      - superset_db_user
+      - superset_db_pass
+      - redis_pass
+    volumes:
+      - superset_app_data:/app/superset_home # For custom configs and data
+      - ./superset_config/superset_config.py:/app/pythonpath/superset_config.py # Mount custom config file directly
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - data_platform_network
+    restart: "no" # This service should not restart after successful completion
+
+  # Apache Superset Web UI
+  superset:
+    image: apache/superset:3.1.1
+    container_name: superset
+    restart: always
+    ports:
+      - "8088:8088" # Superset UI port
+    environment:
+      SUPERSET_DATABASE_URI: postgresql+psycopg2://$(cat /run/secrets/superset_db_user):$(cat /run/secrets/superset_db_pass)@postgres:5432/superset
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    secrets:
+      - superset_db_user
+      - superset_db_pass
+      - redis_pass
+    volumes:
+      - superset_app_data:/app/superset_home
+      - ./superset_config/superset_config.py:/app/pythonpath/superset_config.py # Mount custom config file directly
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      superset-init: # Ensure initialization is complete
+        condition: service_completed_successfully
+    networks:
+      - data_platform_network
+      - observability_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: '1g'
