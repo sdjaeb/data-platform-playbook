@@ -1,0 +1,929 @@
+# docker-compose.yml
+# - Uses named volumes, Docker secrets, configs, and defines networks.
+# - Removes obsolete top-level `version:` key.
+# - Pin x86-only images with `platform: linux/amd64` for Apple Silicon.
+
+x-airflow-common:
+  &airflow-common
+  # In order to add custom dependencies or upgrade provider distributions you can use your extended image.
+  # Comment the image line, place your Dockerfile in the directory where you placed the docker-compose.yaml
+  # and uncomment the "build" line below, Then run `docker-compose build` to build the images.
+  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.0.2}
+  # build: .
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    # yamllint disable rule:line-length
+    # Use simple http server on scheduler for health checks
+    # See https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/check-health.html#scheduler-health-check-server
+    # yamllint enable rule:line-length
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    # WARNING: Use _PIP_ADDITIONAL_REQUIREMENTS option ONLY for a quick checks
+    # for other purpose (development, test and especially production usage) build/extend Airflow image.
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    # The following line can be used to set a custom config file, stored in the local config folder
+    AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+  volumes:
+    - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
+    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
+    - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
+    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    &airflow-common-depends-on
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+
+services:
+  #################################
+  # Core Databases & Messaging    #
+  #################################
+  postgres:
+    image: postgres:14
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: main_db
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_pass
+    secrets:
+      - postgres_user
+      - postgres_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres_user -d main_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_network
+      - observability_network
+    # cpus and mem_limit are not valid here in Compose v3+; remove or use deploy.resources if using Swarm
+
+  zookeeper:
+    platform: linux/amd64
+    image: confluentinc/cp-zookeeper:7.0.1
+    restart: unless-stopped
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'ruok' | nc localhost 2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_network
+
+  kafka:
+    platform: linux/amd64
+    image: confluentinc/cp-kafka:7.0.1
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL","nc -z localhost 29092 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - backend_network
+
+  ##########################
+  # Object Storage (MinIO)  #
+  ##########################
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_pass
+    secrets:
+      - minio_user
+      - minio_pass
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+    networks:
+      - backend_network
+
+  init-minio-buckets:
+    image: minio/mc
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set minio http://minio:9000 \
+          $(cat /run/secrets/minio_user) \
+          $(cat /run/secrets/minio_pass) &&
+        mc mb minio/landing-zone &&
+        mc mb minio/raw &&
+        mc mb minio/processed &&
+        mc mb minio/curated
+      "
+    networks:
+      - backend_network
+
+  ##########################
+  # Document Store (Mongo) #
+  ##########################
+  mongodb:
+    image: mongo:6.0.4
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    command: mongod --replSet rs0 --bind_ip_all
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --eval 'db.adminCommand({ping:1})' --host localhost || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_network
+
+  mongo-init:
+    image: mongo:6.0.4
+    restart: "no"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    command: >
+      mongosh --host mongodb:27017 --eval
+      "rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]})"
+    networks:
+      - backend_network
+
+  ################
+  # Spark Stack  #
+  ################
+  spark-master:
+    image: bitnami/spark:3.3.2
+    restart: unless-stopped 
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    environment:
+      SPARK_MODE: master
+      SPARK_LOCAL_DIRS: /tmp/spark
+      SPARK_HISTORY_FS_LOG_DIRECTORY: file:///opt/bitnami/spark/events
+      SPARK_SUBMIT_ARGS: "--packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.2,io.delta:delta-core_2.12:2.4.0"
+    volumes:
+      - spark_events:/opt/bitnami/spark/events
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 600s
+    networks:
+      - backend_network
+
+  spark-worker-1:
+    image: bitnami/spark:3.3.2
+    restart: unless-stopped
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_CORES: 1
+      SPARK_WORKER_MEMORY: 1G
+      SPARK_SUBMIT_ARGS: "--packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.2,io.delta:delta-core_2.12:2.4.0"
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_network
+
+  spark-history-server:
+    image: bitnami/spark:3.3.2
+    restart: unless-stopped
+    ports:
+      - "18080:18080"
+    environment:
+      SPARK_MODE: history
+      SPARK_HISTORY_FS_LOG_DIRECTORY: file:///opt/bitnami/spark/events
+      SPARK_HISTORY_UI_PORT: 18080
+    volumes:
+      - spark_events:/opt/bitnami/spark/events
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:18080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_network
+
+  #####################
+  # Airflow (Celery)  #
+  #####################
+  airflow-webserver:
+    # Official Airflow uses newer versions, e.g., apache/airflow:3.0.2
+    image: apache/airflow:2.6.3
+    restart: unless-stopped
+    ports:
+      - "8081:8080" # Changed to avoid conflict with Spark Master UI
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN_FILE: /run/secrets/airflow_db_url
+      AIRFLOW__CELERY__BROKER_URL_FILE: /run/secrets/redis_url
+      AIRFLOW__CELERY__RESULT_BACKEND_FILE: /run/secrets/airflow_db_url
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__WEBSERVER__RBAC: 'True'
+      AIRFLOW__WEBSERVER__AUTHENTICATE: 'True'
+      AIRFLOW__WEBSERVER__BASE_URL: 'http://localhost:8081' # Updated port
+      AIRFLOW__CORE__FERNET_KEY_FILE: /run/secrets/airflow_fernet
+      AIRFLOW_UID: 50000
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    depends_on:
+      airflow-scheduler:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: webserver
+    volumes:
+      - dags:/opt/airflow/dags
+      - plugins:/opt/airflow/plugins
+      - airflow_logs:/opt/airflow/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - backend_network
+      - observability_network
+    secrets:
+      - airflow_db_url
+      - redis_url
+      - airflow_fernet
+
+  airflow-scheduler:
+    image: apache/airflow:2.6.3
+    restart: unless-stopped
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN_FILE: /run/secrets/airflow_db_url
+      AIRFLOW__CELERY__BROKER_URL_FILE: /run/secrets/redis_url
+      AIRFLOW__CELERY__RESULT_BACKEND_FILE: /run/secrets/airflow_db_url
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__FERNET_KEY_FILE: /run/secrets/airflow_fernet
+      AIRFLOW_UID: 50000
+      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: scheduler
+    volumes:
+      - dags:/opt/airflow/dags
+      - plugins:/opt/airflow/plugins
+      - airflow_logs:/opt/airflow/logs
+    healthcheck:
+      # Airflow 2.x scheduler health check is on port 8793 by default
+      test: ["CMD", "curl", "--fail", "http://localhost:8793/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - backend_network
+      - observability_network
+    secrets:
+      - airflow_db_url
+      - redis_url
+      - airflow_fernet
+
+  airflow-worker:
+    image: apache/airflow:2.6.3
+    restart: unless-stopped
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN_FILE: /run/secrets/airflow_db_url
+      AIRFLOW__CELERY__BROKER_URL_FILE: /run/secrets/redis_url
+      AIRFLOW__CELERY__RESULT_BACKEND_FILE: /run/secrets/airflow_db_url
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__FERNET_KEY_FILE: /run/secrets/airflow_fernet
+      AIRFLOW_UID: 50000
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      # Required to handle warm shutdown of the celery workers properly
+      # See https://airflow.apache.org/docs/docker-stack/entrypoint.html#signal-propagation
+      DUMB_INIT_SETSID: "0"
+    depends_on:
+      airflow-scheduler:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery worker
+    volumes:
+      - dags:/opt/airflow/dags
+      - plugins:/opt/airflow/plugins
+      - airflow_logs:/opt/airflow/logs
+    # Healthcheck removed as the previous one targeted the scheduler.
+    # Celery worker health is complex; rely on restart policy for now.
+    networks:
+      - backend_network
+      - observability_network
+    secrets:
+      - airflow_db_url
+      - redis_url
+      - airflow_fernet
+
+  airflow-dag-processor:
+    image: apache/airflow:2.6.3
+    restart: unless-stopped
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN_FILE: /run/secrets/airflow_db_url
+      AIRFLOW__CELERY__BROKER_URL_FILE: /run/secrets/redis_url
+      AIRFLOW__CELERY__RESULT_BACKEND_FILE: /run/secrets/airflow_db_url
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__FERNET_KEY_FILE: /run/secrets/airflow_fernet
+      AIRFLOW_UID: 50000
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    depends_on:
+      airflow-scheduler:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: dag-processor
+    volumes:
+      - dags:/opt/airflow/dags
+      - plugins:/opt/airflow/plugins
+      - airflow_logs:/opt/airflow/logs
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type DagProcessorJob --hostname \"$${HOSTNAME}\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - backend_network
+    secrets:
+      - airflow_db_url
+      - redis_url
+      - airflow_fernet
+
+  airflow-triggerer:
+    image: apache/airflow:2.6.3
+    restart: unless-stopped
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN_FILE: /run/secrets/airflow_db_url
+      AIRFLOW__CELERY__BROKER_URL_FILE: /run/secrets/redis_url
+      AIRFLOW__CELERY__RESULT_BACKEND_FILE: /run/secrets/airflow_db_url
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor # Still needed for config loading
+      AIRFLOW__CORE__FERNET_KEY_FILE: /run/secrets/airflow_fernet
+      AIRFLOW_UID: 50000
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    depends_on:
+      airflow-scheduler:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: triggerer
+    volumes:
+      - dags:/opt/airflow/dags # Trigger definitions might be in dags
+      - plugins:/opt/airflow/plugins
+      - airflow_logs:/opt/airflow/logs
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type TriggererJob --hostname \"$${HOSTNAME}\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - backend_network
+    secrets:
+      - airflow_db_url
+      - redis_url
+      - airflow_fernet
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    # yamllint disable rule:line-length
+    command:
+      - -c
+      - |
+        if [[ -z "${AIRFLOW_UID}" ]]; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: AIRFLOW_UID not set!\e[0m"
+          echo "If you are on Linux, you SHOULD follow the instructions below to set "
+          echo "AIRFLOW_UID environment variable, otherwise files will be owned by root."
+          echo "For other operating systems you can get rid of the warning with manually created .env file:"
+          echo "    See: https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#setting-the-right-airflow-user"
+          echo
+          export AIRFLOW_UID=$(id -u)
+        fi
+        one_meg=1048576
+        mem_available=$$(($$(getconf _PHYS_PAGES) * $$(getconf PAGE_SIZE) / one_meg))
+        cpus_available=$$(grep -cE 'cpu[0-9]+' /proc/stat)
+        disk_available=$$(df / | tail -1 | awk '{print $$4}')
+        warning_resources="false"
+        if (( mem_available < 4000 )) ; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: Not enough memory available for Docker.\e[0m"
+          echo "At least 4GB of memory required. You have $$(numfmt --to iec $$((mem_available * one_meg)))"
+          echo
+          warning_resources="true"
+        fi
+        if (( cpus_available < 2 )); then
+          echo
+          echo -e "\033[1;33mWARNING!!!: Not enough CPUS available for Docker.\e[0m"
+          echo "At least 2 CPUs recommended. You have $${cpus_available}"
+          echo
+          warning_resources="true"
+        fi
+        if (( disk_available < one_meg * 10 )); then
+          echo
+          echo -e "\033[1;33mWARNING!!!: Not enough Disk space available for Docker.\e[0m"
+          echo "At least 10 GBs recommended. You have $$(numfmt --to iec $$((disk_available * 1024 )))"
+          echo
+          warning_resources="true"
+        fi
+        if [[ $${warning_resources} == "true" ]]; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: You have not enough resources to run Airflow (see above)!\e[0m"
+          echo "Please follow the instructions to increase amount of resources available:"
+          echo "   https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#before-you-begin"
+          echo
+        fi
+        echo
+        echo "Creating missing opt dirs if missing:"
+        echo
+        mkdir -v -p /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Airflow version:"
+        /entrypoint airflow version
+        echo
+        echo "Files in shared volumes:"
+        echo
+        ls -la /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Running airflow config list to create default config file if missing."
+        echo
+        /entrypoint airflow config list >/dev/null
+        echo
+        echo "Files in shared volumes:"
+        echo
+        ls -la /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Change ownership of files in /opt/airflow to ${AIRFLOW_UID}:0"
+        echo
+        chown -R "${AIRFLOW_UID}:0" /opt/airflow/
+        echo
+        echo "Change ownership of files in shared volumes to ${AIRFLOW_UID}:0"
+        echo
+        chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Files in shared volumes:"
+        echo
+        ls -la /opt/airflow/{logs,dags,plugins,config}
+
+    # yamllint enable rule:line-length
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+      _PIP_ADDITIONAL_REQUIREMENTS: ''
+    user: "0:0"
+    # secrets: # Added secrets
+    #   - airflow_db_url
+    #   - redis_url
+    #   - airflow_fernet
+    networks:
+      - backend_network
+
+  #################
+  # Redis Broker  #
+  #################
+  redis:
+    image: redis:6.2-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass "$(cat /run/secrets/redis_pass)" --appendonly yes
+    secrets:
+      - redis_pass
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "$(cat /run/secrets/redis_pass)", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_network
+
+  ###########################
+  # FastAPI Ingestor        #
+  ###########################
+  fastapi-ingestor:
+    build: ./fastapi_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MONGODB_CONNECTION_STRING: mongodb://mongodb:27017/
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY_FILE: /run/secrets/minio_user
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_pass
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./fastapi-app:/app
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_network
+      - observability_network
+    secrets:
+      - minio_user
+      - minio_pass
+
+  #################################
+  # Metadata Management (OpenDM)  #
+  #################################
+  openmetadata-mysql:
+    image: mysql:8.0
+    container_name: openmetadata-mysql
+    ports:
+      - 3306:3306
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/om_mysql_root
+      MYSQL_DATABASE: openmetadata_db
+      MYSQL_USER: openmetadata_user
+      MYSQL_PASSWORD_FILE: /run/secrets/om_mysql_pass
+      # MYSQL_PASSWORD: openmeta_user_pw
+    secrets:
+      - om_mysql_root
+      - om_mysql_pass
+    volumes:
+      - openmetadata_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: mysql --host=localhost --user=$$MYSQL_USER --password=$$(cat /run/secrets/om_mysql_pass) --silent --execute "use openmetadata_db"
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - backend_network
+
+  openmetadata-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.4 # Changed to Elasticsearch as per working example
+    container_name: openmetadata-elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms1024m -Xmx1024m" # Using ES_JAVA_OPTS and increased memory
+      xpack.security.enabled: "false" # Disable security for ES
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - openmetadata_es_data:/usr/share/elasticsearch/data # Updated volume name and path
+    ports:
+      - "9200:9200"
+      - "9300:9300" # Port for ES transport
+    healthcheck:
+      test: "curl -s http://localhost:9200/_cluster/health?pretty | grep status | grep -qE 'green|yellow' || exit 1"
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - backend_network
+
+  execute-migrate-all:
+    image: docker.getcollate.io/openmetadata/server:1.7.4
+    container_name: openmetadata-migrate-all
+    command: "./bootstrap/openmetadata-ops.sh migrate"
+    environment:
+      # Database configuration
+      DB_DRIVER_CLASS: com.mysql.cj.jdbc.Driver
+      DB_SCHEME: mysql
+      DB_PARAMS: allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+      DB_HOST: openmetadata-mysql
+      DB_PORT: 3306
+      DB_USER: openmetadata_user
+      DB_USER_PASSWORD: openmeta_user_pw
+      OM_DATABASE: openmetadata_db
+      # Elasticsearch configuration
+      ELASTICSEARCH_HOST: openmetadata-elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      ELASTICSEARCH_SCHEME: http
+    secrets:
+      - om_mysql_pass
+    depends_on:
+      openmetadata-mysql:
+        condition: service_healthy
+      openmetadata-elasticsearch:
+        condition: service_healthy
+    networks:
+      - backend_network
+
+  openmetadata-server:
+    image: docker.getcollate.io/openmetadata/server:1.7.4 # Pinned to working version
+    container_name: openmetadata-server
+    restart: unless-stopped
+    ports:
+      - 8585:8585
+    environment:
+      OPENMETADATA_CLUSTER_NAME: docker-cluster
+      # Database configuration
+      DB_DRIVER_CLASS: com.mysql.cj.jdbc.Driver
+      DB_SCHEME: mysql
+      DB_PARAMS: allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+      DB_HOST: openmetadata-mysql
+      DB_PORT: 3306
+      DB_USER: openmetadata_user
+      DB_USER_PASSWORD: openmeta_user_pw
+      OM_DATABASE: openmetadata_db
+      # Elasticsearch configuration
+      ELASTICSEARCH_HOST: openmetadata-elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      ELASTICSEARCH_SCHEME: http
+      JAVA_OPTS: "-Xms512m -Xmx1g" # Kept from original
+    secrets:
+      - om_mysql_pass
+    networks:
+      - backend_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8586/healthcheck || exit 1"] # Healthcheck on admin port
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    depends_on: # Added execute-migrate-all
+      openmetadata-mysql:
+        condition: service_healthy
+      openmetadata-elasticsearch: # Depends on the renamed service
+        condition: service_healthy
+      execute-migrate-all:
+        condition: service_completed_successfully
+
+  openmetadata-ingestion:
+    image: openmetadata/ingestion-base:1.7.4 # Match server version
+    container_name: openmetadata-ingestion
+    restart: unless-stopped
+    depends_on:
+      openmetadata-server:
+        condition: service_healthy
+    volumes:
+      - ingestion-scripts:/opt/airflow/dags/ingestion-scripts
+    entrypoint: ["/opt/ingest/run_ingestion.sh"]
+    environment:
+      OPENMETADATA_SERVER_URL: http://openmetadata-server:8585/api
+    networks:
+      - backend_network
+
+  webhook-listener:
+    image: node:16-alpine
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY_FILE: /run/secrets/minio_user
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_pass
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - webhook:/app
+    command: ["node", "/app/server.js"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_network
+    secrets:
+      - minio_user
+      - minio_pass
+
+  #######################
+  # Observability Stack #
+  #######################
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    privileged: true
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+      # mount your generated machine-id
+      - ./config/cadvisor-machine-id:/etc/machine-id:ro
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl -f http://localhost:8080/metrics || exit 1"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 5
+    #   start_period: 60s
+    networks:
+      - observability_network
+
+  prometheus:
+    image: prom/prometheus:v2.42.0
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    configs:
+      - source: prometheus_yml
+        target: /etc/prometheus/prometheus.yml
+    command: >-
+      --config.file=/etc/prometheus/prometheus.yml
+      --web.enable-remote-write-receiver
+      --storage.tsdb.path=/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:9090/-/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - observability_network
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.47
+    restart: unless-stopped
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "16686:16686" # UI (optional)
+    networks:
+      - observability_network
+
+  grafana-alloy:
+    image: grafana/alloy:latest
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - jaeger
+    ports:
+      - "12345:12345"  # Alloy HTTP server (UI, API, and its own /metrics endpoint)
+      # - "12346:12346"  # Exposed if a specific Alloy component or different metrics endpoint uses this port.
+    networks:
+      - observability_network
+    volumes:
+      - ./config/grafana-alloy.river:/etc/alloy/config.alloy:ro
+    privileged: true
+
+  grafana:
+    image: grafana/grafana:10.2.3
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./config/grafana-dashboards:/etc/grafana/provisioning/dashboards
+      - ./config/grafana-dashboards/dashboard.yml:/etc/grafana/provisioning/dashboards/dashboard.yml:ro
+    depends_on:
+      prometheus: { condition: service_healthy }
+      grafana-alloy: { condition: service_started }
+      cadvisor: { condition: service_healthy }
+    networks:
+      - observability_network
+
+#################################
+# Named Volumes                 #
+#################################
+volumes:
+  postgres_data:
+  minio_data:
+  mongo_data:
+  spark_events:
+  dags:
+  plugins:
+  airflow_logs: # Added for Airflow logs
+  ingestion-scripts:
+  openmetadata_mysql_data:
+  openmetadata_es_data: # Renamed from openmetadata_opensearch_data
+    driver: local
+  webhook:
+  grafana_data:
+
+#################################
+# Docker Secrets                #
+#################################
+secrets:
+  postgres_user:
+    file: ./secrets/postgres_user.txt
+  postgres_pass:
+    file: ./secrets/postgres_pass.txt
+  minio_user:
+    file: ./secrets/minio_user.txt
+  minio_pass:
+    file: ./secrets/minio_pass.txt
+  redis_pass:
+    file: ./secrets/redis_pass.txt
+  airflow_db_url:
+    file: ./secrets/airflow_db_url.txt
+  redis_url:
+    file: ./secrets/redis_url.txt
+  airflow_fernet:
+    file: ./secrets/airflow_fernet.txt
+  om_mysql_root:
+    file: ./secrets/om_mysql_root.txt
+  om_mysql_pass:
+    file: ./secrets/om_mysql_pass.txt
+
+#################################
+# Docker Configs                #
+#################################
+configs:
+  prometheus_yml:
+    file: ./config/prometheus.yml
+
+#################################
+# Networks                      #
+#################################
+networks:
+  backend_network:
+    driver: bridge
+  observability_network:
+    driver: bridge
+    

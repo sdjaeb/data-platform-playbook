@@ -8,8 +8,8 @@ source:
   serviceConnection:
     config:
       type: MongoDB # Type of connection configuration
-      username: root # MongoDB user from docker-compose
-      password: password # MongoDB password from docker-compose
+      username: root # MongoDB user from docker-compose (root)
+      password: example # MongoDB password from docker-compose (example)
       # IMPORTANT NOTE: 'mongodb' is the service name from docker-compose.
       hostPort: mongodb:27017
       authSource: admin # Specify the authentication database if needed (root user is in admin db)
