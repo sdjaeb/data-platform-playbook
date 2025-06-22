@@ -11,10 +11,11 @@ version: '3.8'
 include:
   - docker-compose.base.yml
   - docker-compose.core.yml
+  - docker-compose.generators.yml
   - docker-compose.ingestion.yml
   - docker-compose.processing.yml
   - docker-compose.orchestration.yml
-  - docker-compose.dbt.yml # New dbt file
+  - docker-compose.dbt.yml
   - docker-compose.governance.yml
   - docker-compose.bi.yml
   - docker-compose.observability.yml

@@ -36,6 +36,11 @@ mkdir -p webhook_listener_app
 mkdir -p dbt_projects
 mkdir -p dbt_profiles
 
+# Create directories for data generators at the repo root
+mkdir -p ../data-generators/financial-generator
+mkdir -p ../data-generators/insurance-generator
+mkdir -p ../data-generators/sports-generator
+
 # Create dummy files/directories if they don't exist, as required by docker-compose mounts
 touch ./observability/alloy-config.river # Ensure this file exists for Grafana Alloy mount
 # Corrected requirements.txt for FastAPI, removing opentelemetry-sdk-metrics and adding correct packages
@@ -106,6 +111,35 @@ data_platform_project:
       meta_dbname: "{{ env_var('DBT_PG_DBNAME') }}"
 EOF
 fi
+
+################################################################################
+# Create placeholder files for data generators
+################################################################################
+
+DOCKERFILE_CONTENT=$(cat <<'EOF'
+FROM python:3.11-slim
+
+# Install uv, the fast Python package installer
+RUN apt-get update && apt-get install -y curl && \
+    curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    apt-get remove -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+
+# Use uv to install packages
+RUN /root/.cargo/bin/uv pip install --no-cache -r requirements.txt
+
+COPY main.py .
+CMD ["python", "main.py"]
+EOF
+)
+
+for generator in financial-generator insurance-generator sports-generator; do
+  [ -f "../data-generators/$generator/Dockerfile" ] || echo "$DOCKERFILE_CONTENT" > "../data-generators/$generator/Dockerfile"
+  [ -f "../data-generators/$generator/requirements.txt" ] || echo -e "requests\nFaker" > "../data-generators/$generator/requirements.txt"
+  [ -f "../data-generators/$generator/main.py" ] || echo -e "import time\nprint('Starting $generator...')" > "../data-generators/$generator/main.py"
+done
 
 echo "Placeholder application and configuration files ensured."
 
