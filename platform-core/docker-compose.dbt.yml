@@ -8,7 +8,9 @@ services:
   # dbt: Data Build Tool for managing data transformations.
   # It connects to Spark via the Thrift server and uses PostgreSQL for its metadata.
   dbt:
-    image: ghcr.io/dbt-labs/dbt-spark:latest # Using dbt-spark image for Spark/Delta Lake
+    build:
+      context: ./dbt_image # Build a custom image for native ARM64 support
+      dockerfile: Dockerfile
     container_name: dbt
     restart: "no" # Typically run as a one-off job or orchestrated by Airflow
     environment:

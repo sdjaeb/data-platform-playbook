@@ -1,5 +1,32 @@
 version: '3.8'
 
+# Airflow common settings (used as an anchor for reuse across all Airflow services)
+x-airflow-common: &airflow-common
+  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.0.2} # Use Airflow 3.0.2 as specified in todo.txt
+  environment: &airflow-common-env
+    # Core Airflow configurations
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow # Connects to the 'postgres' service
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0 # Connects to the 'redis' service
+    AIRFLOW__CORE__FERNET_KEY: '' # Should be set via secret in production
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    # Additional Python packages for Airflow
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+  volumes:
+    - dags:/opt/airflow/dags # Mount DAGs from host
+    - airflow_logs:/opt/airflow/logs # Mount logs from host
+    - ./config:/opt/airflow/config # Mount Airflow config from host
+    - plugins:/opt/airflow/plugins # Mount plugins from host
+  user: "${AIRFLOW_UID:-50000}:0" # Set user to prevent permission issues
+  networks:
+    - data_platform_network
+
 services:
   #####################
   # Airflow (Celery)  #
@@ -10,7 +37,7 @@ services:
   airflow-init:
     <<: *airflow-common # Inherit common Airflow settings
     container_name: airflow-init
-    entrypoint: /bin/bash
+    entrypoint: /bin/bash # Override entrypoint for initial setup
     command:
       - -c
       - |
@@ -18,7 +45,7 @@ services:
         echo "Waiting for PostgreSQL and Redis to be ready..."
         /entrypoint.sh bash -c 'until pg_isready -h postgres -p 5432 -U airflow; do sleep 1; done;'
         /entrypoint.sh bash -c 'until redis-cli -a $$(cat /run/secrets/redis_pass) ping; do sleep 1; done;'
-
+ 
         echo "Running Airflow DB migration..."
         airflow db migrate
 
@@ -27,7 +54,7 @@ services:
 
         echo "Setting permissions on Airflow volumes..."
         chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/
-        chown -v -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/{logs,dags,plugins,config}
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/{logs,dags,plugins,config}
 
         echo "Airflow initialization complete."
     user: "0:0" # Run as root for initial permissions
@@ -38,7 +65,7 @@ services:
         condition: service_healthy
     secrets:
       - postgres_user
-      - postgres_pass
+      - postgres_pass 
       - redis_pass
       - airflow_db_url
       - redis_url
@@ -86,7 +113,7 @@ services:
         limits:
           cpus: '0.5'
           memory: '1g'
-
+ 
   # Airflow Scheduler: The core component that monitors all DAGs and tasks,
   # and triggers task instances whose dependencies have been met.
   airflow-scheduler:
@@ -123,7 +150,7 @@ services:
         limits:
           cpus: '1.0'
           memory: '1g'
-
+ 
   # Airflow Worker: Executes the tasks assigned by the Celery message broker (Redis).
   # You can scale these workers to handle more concurrent tasks.
   airflow-worker:
@@ -154,7 +181,7 @@ services:
         limits:
           cpus: '1.0'
           memory: '1g'
-    networks:
+    networks: 
       - data_platform_network
       - observability_network
 
@@ -189,7 +216,7 @@ services:
         limits:
           cpus: '0.5'
           memory: '768m'
-
+ 
   # Airflow Triggerer: A separate process for running deferred tasks,
   # which is more efficient for long-running, asynchronous operations.
   airflow-triggerer:
