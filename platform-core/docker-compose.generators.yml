@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   #################################
   # Data Generation Services      #
@@ -9,6 +7,8 @@ services:
   financial-generator:
     build:
       context: ../data-generators/financial-generator
+    ports:
+      - "5001:5000"
     container_name: financial-generator
     restart: always
     depends_on:
@@ -26,6 +26,8 @@ services:
   insurance-generator:
     build:
       context: ../data-generators/insurance-generator
+    ports:
+      - "5002:5000"
     container_name: insurance-generator
     restart: always
     depends_on:
@@ -43,6 +45,8 @@ services:
   sports-generator:
     build:
       context: ../data-generators/sports-generator
+    ports:
+      - "5003:5000"
     container_name: sports-generator
     restart: always
     depends_on:

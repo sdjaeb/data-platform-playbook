@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   #######################
   # Observability Stack #
@@ -163,16 +161,14 @@ services:
       - "3000:3000" # Grafana UI
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./observability/grafana_datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
-      - ./observability/grafana_dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
-      - ./observability/dashboards:/var/lib/grafana/dashboards
+      - ./observability/dashboards:/var/lib/grafana/dashboards # This is for actual dashboard JSON files
+      - ./grafana_provisioning:/etc/grafana/provisioning:ro # New mount for provisioning files
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_INSTALL_PLUGINS: "grafana-piechart-panel,grafana-worldmap-panel"
     depends_on:
       - prometheus
-      - loki
       - jaeger
       - cadvisor
     networks:
@@ -183,7 +179,8 @@ services:
           cpus: '0.25'
           memory: '256m'
     healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/3000' || exit 1"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
       retries: 5
+      start_period: 60s

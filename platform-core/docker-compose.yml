@@ -6,8 +6,6 @@
 # To run a subset of services, you can specify the files directly, e.g.:
 #   docker compose -f docker-compose.base.yml -f docker-compose.core.yml up
 
-version: '3.8'
-
 include:
   - docker-compose.base.yml
   - docker-compose.core.yml

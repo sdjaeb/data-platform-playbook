@@ -9,8 +9,8 @@ source:
   serviceConnection:
     config:
       type: PostgreSQL # Type of connection configuration
-      username: om_user # PostgreSQL user from secrets/om_db_user.txt
-      password: om_pass # PostgreSQL password from secrets/om_db_pass.txt
+      username: openmetadata_user # PostgreSQL user from secrets/om_db_user.txt
+      password: openmetadata_password # PostgreSQL password from secrets/om_db_pass.txt
       # IMPORTANT NOTE: 'postgres' is the service name from docker-compose.
       hostPort: postgres:5432
       database: airflow # Corrected to point to the Airflow metastore database

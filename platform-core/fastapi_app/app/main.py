@@ -10,6 +10,7 @@ import time # For simulating processing time for histogram
 from datetime import datetime
 from typing import Optional
 
+from .models import FinancialTransaction, InsuranceClaim
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 from kafka import KafkaProducer
@@ -74,8 +75,7 @@ insurance_claim_counter = meter.create_counter(
 ingestion_latency_histogram = meter.create_histogram(
     "ingestion.request.duration_ms",
     description="Duration of data ingestion requests in milliseconds",
-    unit="ms",
-    boundaries=[1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000] # Example buckets
+    unit="ms"
 )
 
 # --- Tracing Setup ---
@@ -93,27 +93,6 @@ trace.get_tracer_provider().add_span_processor(
 # making it easier to correlate logs with specific requests in a distributed trace.
 LoggingInstrumentor().instrument(set_logging_format=True)
 
-# --- Pydantic Models for Request Body Validation ---
-class FinancialTransaction(BaseModel):
-    transaction_id: str = Field(..., example="FT-20231026-001")
-    timestamp: datetime = Field(..., example="2023-10-26T14:30:00Z")
-    account_id: str = Field(..., example="ACC-001")
-    amount: float = Field(..., gt=0, example=150.75)
-    currency: str = Field(..., max_length=3, example="USD")
-    transaction_type: str = Field(..., example="debit")
-    merchant_id: Optional[str] = Field(None, example="MER-XYZ")
-    category: Optional[str] = Field(None, example="groceries")
-
-class InsuranceClaim(BaseModel):
-    claim_id: str = Field(..., example="IC-20231026-001")
-    timestamp: datetime = Field(..., example="2023-10-26T15:00:00Z")
-    policy_number: str = Field(..., example="POL-987654")
-    claim_amount: float = Field(..., gt=0, example=1000.00)
-    claim_type: str = Field(..., example="auto")
-    claim_status: str = Field(..., example="submitted")
-    customer_id: str = Field(..., example="CUST-ABC")
-    incident_date: datetime = Field(..., example="2023-09-15T08:00:00Z")
-
 # --- FastAPI App Initialization ---
 app = FastAPI(
     title="Financial/Insurance Data Ingestor API",
@@ -129,8 +108,23 @@ FastAPIInstrumentor.instrument_app(app)
 # Kafka broker address and topic names are loaded from environment variables.
 # In Docker Compose, 'kafka' is the service name, which resolves to its internal IP.
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "kafka:29092")
-KAFKA_TOPIC_FINANCIAL = os.getenv("KAFKA_TOPIC_FINANCIAL", "raw_financial_transactions")
-KAFKA_TOPIC_INSURANCE = os.getenv("KAFKA_TOPIC_INSURANCE", "raw_insurance_claims")
+# Financial topics
+KAFKA_TOPIC_RAW_FINANCIAL = os.getenv("KAFKA_TOPIC_RAW_FINANCIAL", "raw_financial_events")
+KAFKA_TOPIC_CURATED_FINANCIAL = os.getenv("KAFKA_TOPIC_CURATED_FINANCIAL", "curated_financial_events")
+KAFKA_TOPIC_MALFORMED_FINANCIAL = os.getenv("KAFKA_TOPIC_MALFORMED_FINANCIAL", "malformed_financial_events")
+KAFKA_TOPIC_DLQ_FINANCIAL = os.getenv("KAFKA_TOPIC_DLQ_FINANCIAL", "dlq_financial_events")
+
+# Insurance topics
+KAFKA_TOPIC_RAW_INSURANCE = os.getenv("KAFKA_TOPIC_RAW_INSURANCE", "raw_insurance_claims")
+KAFKA_TOPIC_CURATED_INSURANCE = os.getenv("KAFKA_TOPIC_CURATED_INSURANCE", "curated_insurance_claims")
+KAFKA_TOPIC_MALFORMED_INSURANCE = os.getenv("KAFKA_TOPIC_MALFORMED_INSURANCE", "malformed_insurance_claims")
+KAFKA_TOPIC_DLQ_INSURANCE = os.getenv("KAFKA_TOPIC_DLQ_INSURANCE", "dlq_insurance_claims")
+
+# Sports topics
+KAFKA_TOPIC_RAW_SPORTS = os.getenv("KAFKA_TOPIC_RAW_SPORTS", "raw_sports_events")
+KAFKA_TOPIC_CURATED_SPORTS = os.getenv("KAFKA_TOPIC_CURATED_SPORTS", "curated_sports_events")
+KAFKA_TOPIC_MALFORMED_SPORTS = os.getenv("KAFKA_TOPIC_MALFORMED_SPORTS", "malformed_sports_events")
+KAFKA_TOPIC_DLQ_SPORTS = os.getenv("KAFKA_TOPIC_DLQ_SPORTS", "dlq_sports_events")
 
 producer = None # Initialize producer to None
 try:
@@ -241,3 +235,21 @@ async def ingest_insurance_claim(claim: InsuranceClaim):
             "claim.type": claim.claim_type,
             "status": "completed" if producer else "failed_producer_unavailable"
         })
+
+@app.post("/ingest-malformed-financial/", status_code=status.HTTP_200_OK, tags=["Testing"])
+async def ingest_malformed_financial():
+    bad_msg = {"bad_field": "not a real transaction", "timestamp": str(datetime.utcnow())}
+    if producer:
+        producer.send(KAFKA_TOPIC_MALFORMED_FINANCIAL, bad_msg)
+        return {"message": "Malformed financial message sent"}
+    else:
+        raise HTTPException(status_code=500, detail="Kafka producer not available")
+
+@app.post("/ingest-malformed-insurance/", status_code=status.HTTP_200_OK, tags=["Testing"])
+async def ingest_malformed_insurance():
+    bad_msg = {"bad_field": "not a real claim", "timestamp": str(datetime.utcnow())}
+    if producer:
+        producer.send(KAFKA_TOPIC_MALFORMED_INSURANCE, bad_msg)
+        return {"message": "Malformed insurance message sent"}
+    else:
+        raise HTTPException(status_code=500, detail="Kafka producer not available")

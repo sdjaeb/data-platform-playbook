@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   #################################
   # Metadata Management (OpenMetadata)  #
@@ -73,8 +71,8 @@ services:
       DB_SCHEME: postgresql
       DB_HOST: openmetadata-postgres
       DB_PORT: 5432
-      DB_USER: om_user
-      DB_USER_PASSWORD: om_pass
+      DB_USER: openmetadata_user # Hardcoded as _FILE suffix is not supported by this image
+      DB_USER_PASSWORD: openmetadata_password # Hardcoded as _FILE suffix is not supported by this image
       OM_DATABASE: openmetadata_db
       ELASTICSEARCH_HOST: openmetadata-elasticsearch
       ELASTICSEARCH_PORT: 9200
@@ -102,8 +100,8 @@ services:
       DB_SCHEME: postgresql
       DB_HOST: openmetadata-postgres
       DB_PORT: 5432
-      DB_USER: om_user
-      DB_USER_PASSWORD: om_pass
+      DB_USER: openmetadata_user # Hardcoded as _FILE suffix is not supported by this image
+      DB_USER_PASSWORD: openmetadata_password # Hardcoded as _FILE suffix is not supported by this image
       OM_DATABASE: openmetadata_db
       ELASTICSEARCH_HOST: openmetadata-elasticsearch
       ELASTICSEARCH_PORT: 9200
@@ -226,7 +224,7 @@ services:
     container_name: spline-ui
     restart: always
     environment:
-      SPLINE_CONSUMER_URL: 'http://${DOCKER_HOST_EXTERNAL:-localhost}:8082/consumer'
+      SPLINE_CONSUMER_URL: 'http://spline-rest-server:8080/consumer'
     ports:
       - "9090:8080"
     depends_on:

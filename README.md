@@ -45,6 +45,7 @@ This project leverages the following open-source technologies, which are central
 *   **Apache Airflow:** Workflow orchestration platform to schedule and monitor data pipelines.
 *   **Apache Superset:** Data visualization and business intelligence platform.
 *   **Spline:** Automated data lineage tracking for Apache Spark jobs.
+*   **Containerized Data Generators:** Services that automatically produce mock financial, insurance, and sports data.
 *   **dbt (data build tool):** For managing data transformations and defining data models.
 *   **OpenMetadata:** Unified data catalog for data discovery and governance.
 *   **Grafana Stack (Grafana, Loki, Prometheus, Alloy):** A full observability suite for visualizing metrics, logs, and traces.
@@ -121,26 +122,13 @@ Once the `bootstrap.sh` script completes, you can access the following UIs:
 
 Follow these steps to see the platform in action:
 
-1.  **Generate Data:** In a new terminal, run the data simulator to send data to the FastAPI endpoint.
-    ```bash
-    python3 simulate_data.py
-    ```
+1.  **Automated Data Generation:** When you run the bootstrap script, three data generator services (`financial-generator`, `insurance-generator`, `sports-generator`) start automatically. They continuously create mock data and send it to the FastAPI endpoint. There is no need to run a separate script.
 
 2.  **Observe Ingestion:** Data flows from the simulator to FastAPI, which produces messages to Kafka. A Spark streaming job consumes these messages and writes the raw data as Delta tables into the `raw-data-bucket` in MinIO.
 
 3.  **Run Transformation Pipeline:** In the Airflow UI (`http://localhost:8080`), unpause and trigger the `full_pipeline_with_governance` DAG. This will orchestrate a Spark batch job to transform the raw data and write it to the `curated-data-bucket`.
 
-4.  **Run dbt Transformations:**
-    dbt is integrated to manage your data transformations. You can execute dbt commands directly within its container.
-    ```bash
-    # Access the dbt container and run a debug command to verify connection
-    docker compose exec dbt dbt debug --profiles-dir /usr/app/dbt_profiles
-
-    # Once you have a dbt project, you can run models:
-    # docker compose exec dbt dbt run --profiles-dir /usr/app/dbt_profiles
-    ```
-
-5.  **Explore & Monitor:**
+4.  **Explore & Monitor:**
     *   **OpenMetadata:** See the new tables and view their end-to-end data lineage.
     *   **Superset:** Connect to the curated data and build dashboards.
     *   **Grafana:** View dashboards monitoring container health and application metrics.
@@ -149,22 +137,22 @@ Follow these steps to see the platform in action:
 
 The repository is organized to logically separate different components:
 
-```
+```text
 .
+├── data-generators/          # Containerized services for generating mock data
+│   ├── financial-generator/
+│   ├── insurance-generator/
+│   └── sports-generator/
 ├── platform-core/            # Contains all Docker Compose files, configs, and scripts
 │   ├── airflow_dags/         # Airflow DAG definitions
-│   ├── config/               # Shared configuration files (e.g., Grafana Alloy)
 │   ├── fastapi_app/          # FastAPI ingestion service
-│   ├── observability/        # Grafana dashboards and provisioning files
 │   ├── postgres-init/        # Initialization scripts for PostgreSQL
 │   ├── pyspark_jobs/         # Spark transformation jobs
 │   ├── scripts/              # Helper scripts (e.g., bootstrap.sh)
-│   ├── secrets/              # Secret files (placeholders)
 │   ├── superset_config/      # Superset configuration
 │   ├── webhook_listener_app/ # MinIO webhook listener service
 │   └── docker-compose.*.yml  # Modular Docker Compose files
 ├── docs/                     # Historical and deep-dive documentation
-├── simulate_data.py          # Script to generate sample data
 └── README.md                 # This file
 ```
 

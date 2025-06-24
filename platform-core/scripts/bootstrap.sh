@@ -19,7 +19,7 @@ command -v curl >/dev/null 2>&1 || { echo >&2 "Warning: 'curl' is recommended fo
 
 # Check for Locust if planning to run load tests
 if ! command -v locust >/dev/null 2>&1; then
-  echo "Warning: Locust (for load testing) is not installed. You can install it later with 'pip install locust'."
+  echo "Warning: Locust (for load testing) is not installed. You can install it later with 'python3 -m pip install locust'."
 fi
 
 echo "All essential prerequisites appear to be met."
@@ -30,7 +30,8 @@ mkdir -p data/{postgres,mongodb,minio,spark-events,grafana,airflow_logs,openmeta
 mkdir -p fastapi_app/app
 mkdir -p pyspark_jobs
 mkdir -p airflow_dags
-mkdir -p observability/{grafana_dashboards,grafana_datasources}
+mkdir -p observability/{grafana_dashboards}
+touch platform-core/observability/grafana_datasources.yml
 mkdir -p openmetadata_ingestion_scripts
 mkdir -p webhook_listener_app
 mkdir -p dbt_projects
@@ -119,16 +120,11 @@ fi
 DOCKERFILE_CONTENT=$(cat <<'EOF'
 FROM python:3.11-slim
 
-# Install uv, the fast Python package installer
-RUN apt-get update && apt-get install -y curl && \
-    curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    apt-get remove -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 COPY requirements.txt .
 
-# Use uv to install packages
-RUN /root/.cargo/bin/uv pip install --no-cache -r requirements.txt
+# Use pip to install packages
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
 CMD ["python", "main.py"]
@@ -136,9 +132,109 @@ EOF
 )
 
 for generator in financial-generator insurance-generator sports-generator; do
-  [ -f "../data-generators/$generator/Dockerfile" ] || echo "$DOCKERFILE_CONTENT" > "../data-generators/$generator/Dockerfile"
-  [ -f "../data-generators/$generator/requirements.txt" ] || echo -e "requests\nFaker" > "../data-generators/$generator/requirements.txt"
-  [ -f "../data-generators/$generator/main.py" ] || echo -e "import time\nprint('Starting $generator...')" > "../data-generators/$generator/main.py"
+  echo "$DOCKERFILE_CONTENT" > "../data-generators/$generator/Dockerfile"
+  echo -e "requests\nFaker\nflask\nkafka-python" > "../data-generators/$generator/requirements.txt"
+  cat > "../data-generators/$generator/main.py" <<PYEOF
+import threading
+import time
+import random
+import os
+import json
+from datetime import datetime
+from flask import Flask
+from kafka import KafkaProducer
+from faker import Faker
+
+fake = Faker()
+app = Flask(__name__)
+running = False
+producer = KafkaProducer(
+    bootstrap_servers=os.getenv("KAFKA_BROKER", "kafka:29092"),
+    value_serializer=lambda v: json.dumps(v).encode("utf-8")
+)
+
+GENERATOR = "${generator}"
+
+if GENERATOR == "financial-generator":
+    TOPIC_RAW = "raw_financial_events"
+    TOPIC_MALFORMED = "malformed_financial_events"
+    def generate_valid():
+        return {
+            "transaction_id": f"FT-{random.randint(1000,9999)}",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "account_id": f"ACC-{random.randint(100,999)}",
+            "amount": round(random.uniform(10, 1000), 2),
+            "currency": random.choice(["USD", "EUR", "GBP"]),
+            "transaction_type": random.choice(["debit", "credit"]),
+            "merchant_id": f"MER-{fake.lexify(text='???')}",
+            "category": random.choice(["groceries", "electronics", "travel"])
+        }
+elif GENERATOR == "insurance-generator":
+    TOPIC_RAW = "raw_insurance_claims"
+    TOPIC_MALFORMED = "malformed_insurance_claims"
+    def generate_valid():
+        return {
+            "claim_id": f"IC-{random.randint(1000,9999)}",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "policy_number": f"POL-{random.randint(100000,999999)}",
+            "claim_amount": round(random.uniform(100, 10000), 2),
+            "claim_type": random.choice(["auto", "home", "health"]),
+            "claim_status": random.choice(["submitted", "approved", "rejected"]),
+            "customer_id": f"CUST-{fake.lexify(text='???')}",
+            "incident_date": datetime.utcnow().isoformat() + "Z"
+        }
+elif GENERATOR == "sports-generator":
+    TOPIC_RAW = "raw_sports_events"
+    TOPIC_MALFORMED = "malformed_sports_events"
+    def generate_valid():
+        return {
+            "event_id": f"SE-{random.randint(1000,9999)}",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "sport": random.choice(["soccer", "basketball", "tennis"]),
+            "team_a": fake.company(),
+            "team_b": fake.company(),
+            "score_a": random.randint(0, 5),
+            "score_b": random.randint(0, 5),
+            "location": fake.city(),
+            "status": random.choice(["scheduled", "in_progress", "finished"])
+        }
+else:
+    raise Exception("Unknown generator type")
+
+def generate_data():
+    global running
+    while running:
+        msg = generate_valid()
+        producer.send(TOPIC_RAW, msg)
+        print(f"Sent: {msg}")
+        time.sleep(1)
+
+@app.route('/start')
+def start():
+    global running
+    if not running:
+        running = True
+        threading.Thread(target=generate_data, daemon=True).start()
+    return "Started"
+
+@app.route('/stop')
+def stop():
+    global running
+    running = False
+    return "Stopped"
+
+@app.route('/malformed')
+def malformed():
+    count = random.randint(1, 10)
+    for _ in range(count):
+        bad_msg = {"bad_field": "malformed_data", "timestamp": datetime.utcnow().isoformat() + "Z"}
+        producer.send(TOPIC_MALFORMED, bad_msg)
+        print(f"Sent malformed: {bad_msg}")
+    return f"Sent {count} malformed messages"
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+PYEOF
 done
 
 echo "Placeholder application and configuration files ensured."
@@ -169,12 +265,25 @@ fi
 
 # --- 7. Initialize Kafka Topics ---
 echo "--- Initializing Kafka Topics (services are healthy) ---"
-# Create raw_financial_transactions topic
-docker exec kafka kafka-topics --create --topic raw_financial_transactions --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --if-not-exists
-# Create raw_insurance_claims topic
-docker exec kafka kafka-topics --create --topic raw_insurance_claims --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --if-not-exists
-# Create a test topic for integration tests if needed, or simply for demonstration
-docker exec kafka kafka-topics --create --topic raw_data_test --bootstrap-server kafka:29092 --partitions 1 --replication-factor 1 --if-not-exists
+
+# Financial
+docker exec kafka kafka-topics --create --topic raw_financial_events --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --config retention.ms=86400000 --if-not-exists
+docker exec kafka kafka-topics --create --topic malformed_financial_events --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --config retention.ms=86400000 --if-not-exists
+docker exec kafka kafka-topics --create --topic curated_financial_events --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --if-not-exists
+docker exec kafka kafka-topics --create --topic dlq_financial_events --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --if-not-exists
+
+# Insurance
+docker exec kafka kafka-topics --create --topic raw_insurance_claims --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --config retention.ms=86400000 --if-not-exists
+docker exec kafka kafka-topics --create --topic malformed_insurance_claims --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --config retention.ms=86400000 --if-not-exists
+docker exec kafka kafka-topics --create --topic curated_insurance_claims --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --if-not-exists
+docker exec kafka kafka-topics --create --topic dlq_insurance_claims --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --if-not-exists
+
+# Sports
+docker exec kafka kafka-topics --create --topic raw_sports_events --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --config retention.ms=86400000 --if-not-exists
+docker exec kafka kafka-topics --create --topic malformed_sports_events --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --config retention.ms=86400000 --if-not-exists
+docker exec kafka kafka-topics --create --topic curated_sports_events --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --if-not-exists
+docker exec kafka kafka-topics --create --topic dlq_sports_events --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --config retention.ms=604800000 --if-not-exists
+
 echo "Kafka topics created."
 
 # --- 8. Initialize MinIO Buckets and Webhook Configuration ---
@@ -223,10 +332,11 @@ for service in "${services_to_check[@]}"; do
   # Adjust the URL/port based on the docker-compose.yml
   case "$service" in
     "superset") HEALTH_URL="http://localhost:8088/health";;
-    "airflow-webserver") HEALTH_URL="http://localhost:8080/health";;
+    "airflow-webserver") HEALTH_URL="http://localhost:8080/api/v2/version";;
     "grafana") HEALTH_URL="http://localhost:3000/api/health";;
+    "webhook-listener") HEALTH_URL="http://localhost:3001/health";; # Assuming /health endpoint for webhook-listener
     "spline-ui") HEALTH_URL="http://localhost:9090/";; # Spline UI doesn't have a specific /health API on / endpoint itself
-    "openmetadata-server") HEALTH_URL="http://localhost:8586/healthcheck";;
+    "openmetadata-server") HEALTH_URL="http://localhost:8585/api/v1/health";;
     "spark-history-server") HEALTH_URL="http://localhost:18080";;
     *) HEALTH_URL="";; # Default to empty for unknown services
   esac

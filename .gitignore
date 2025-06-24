@@ -1,5 +1,101 @@
+# General logs, temp, and backup files
+*.log
+*.out
+*.err
+*.tmp
+*.bak
+*.swp
+*.swo
+*.old
+*.orig
+logs/
+log/
+tmp/
+temp/
+backup/
+backups/
+
+# Byte-compiled / optimized / DLL files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Virtual environments
+.env
+.env.*
+.venv/
+env/
+ENV/
+venv/
+Pipfile.lock
+poetry.lock
+
+# Docker
+*.pid
+docker-compose.override.yml
+docker-compose.*.override.yml
+
+# VSCode and JetBrains IDEs
+.vscode/
+.idea/
+
+# OS generated files
 .DS_Store
-__pycache__
-.repomix
-platform-core/data
-venv
+Thumbs.db
+
+# Test and coverage outputs
+.coverage
+htmlcov/
+.tox/
+.nox/
+.cache/
+pytest_cache/
+coverage.xml
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+terraform.tfvars
+
+# Airflow
+airflow.db
+airflow-webserver.pid
+airflow_logs/
+
+# dbt
+dbt_modules/
+dbt_packages/
+dbt_profiles/
+
+# Data and database files
+*.sqlite3
+*.db
+
+# Secrets (if not already handled)
+secrets/
+*.key
+*.pem
+
+# Node.js (if any JS/TS code)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# uv (Python package manager)
+.uv/
+
+# ruff (Python linter)
+.ruff_cache/
+ruff_cache/
