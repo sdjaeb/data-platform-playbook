@@ -40,25 +40,32 @@ services:
     container_name: airflow-init
     entrypoint: /bin/bash # Override entrypoint for initial setup
     command:
-      - -c
+      - -c # Use a more robust and syntactically correct init script
       - |
-        echo "Waiting for PostgreSQL and Redis to be ready..."
+        set -e
+        echo "Waiting for PostgreSQL..."
         until pg_isready -h postgres -p 5432 -U airflow; do sleep 1; done
-        python -c "import time, redis; r = redis.Redis(host='redis', port=6379, password=open('/run/secrets/redis_pass').read().strip()); \
-          while True: \
-              try: r.ping(); break \
-              except Exception: time.sleep(1)"
-                  echo "Running Airflow DB migration..."
-                  airflow db migrate
+        echo "PostgreSQL is ready."
 
-                  echo "Creating Airflow admin user..."
-                  airflow users create --username admin --password admin --firstname Airflow --lastname Admin --role Admin --email admin@example.com || true
+        echo "Waiting for Redis..."
+        # The base airflow image doesn't have redis-cli, so we install it first.
+        # This requires the container to run as root, which is set via 'user: "0:0"'.
+        apt-get update -yqq && apt-get install -yqq --no-install-recommends redis-tools && \
+        until redis-cli -h redis -a "$(cat /run/secrets/redis_pass)" ping > /dev/null 2>&1; do
+          sleep 1;
+        done
+        echo "Redis is ready."
 
-                  echo "Setting permissions on Airflow volumes..."
-                  chown -R \"${AIRFLOW_UID:-50000}:0\" /opt/airflow/
-                  chown -R \"${AIRFLOW_UID:-50000}:0\" /opt/airflow/{logs,dags,plugins,config}
+        echo "Running Airflow DB migration..."
+        airflow db migrate
 
-                  echo "Airflow initialization complete."
+        echo "Creating Airflow admin user..."
+        airflow users create --username admin --password admin --firstname Airflow --lastname Admin --role Admin --email admin@example.com || true
+
+        echo "Setting permissions on Airflow volumes..."
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/{logs,dags,plugins,config}
+
+        echo "Airflow initialization complete."
     user: "0:0" # Run as root for initial permissions
     depends_on:
       postgres:
@@ -79,7 +86,7 @@ services:
   airflow-webserver:
     <<: *airflow-common
     container_name: airflow-webserver
-    command: api-server
+    command: api-server # In Airflow 3.0+, 'api-server' runs both the API and the UI
     ports:
       - "8080:8080"
     environment:
@@ -218,36 +225,3 @@ services:
         limits:
           cpus: '0.5'
           memory: '768m'
- 
-  # Airflow Triggerer: A separate process for running deferred tasks,
-  # which is more efficient for long-running, asynchronous operations.
-  airflow-triggerer:
-    <<: *airflow-common
-    container_name: airflow-triggerer
-    command: triggerer
-    environment:
-      <<: *airflow-common-env
-    depends_on:
-      airflow-scheduler:
-        condition: service_healthy
-      airflow-init:
-        condition: service_completed_successfully
-    secrets:
-      - airflow_db_url
-      - redis_url
-      - airflow_fernet
-      - postgres_user
-      - postgres_pass
-    networks:
-      - data_platform_network
-    healthcheck:
-      test: ["CMD-SHELL", "airflow jobs check --job-type TriggererJob --hostname \"$${HOSTNAME}\" || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: '512m'

@@ -246,11 +246,10 @@ echo "Note: The platform is defined across multiple 'docker-compose.*.yml' files
 echo "The main 'docker-compose.yml' uses the 'include' directive to combine them."
 echo "This allows for a modular setup."
 
-
-# The '--wait' flag tells Compose to wait until all services with a healthcheck
-# are in a 'healthy' state. This simplifies the script by removing manual polling loops.
-# It also ensures that one-off initialization containers (like airflow-init) have
-# completed successfully, as other services depend on them.
+# The '--wait' flag is a crucial part of this command. It instructs Docker Compose
+# to wait until all services that have a `healthcheck` defined in their
+# respective docker-compose.*.yml file are in a 'healthy' state before proceeding.
+# This eliminates the need for manual `sleep` commands or polling loops in this script.
 docker compose up --build -d --wait
 
 echo "All services are up and healthy."
@@ -318,46 +317,6 @@ echo "For now, this is a placeholder. 'docker compose up --wait' ensures MongoDB
 # This would require careful escaping and data formatting. Manual insertion via shell is often easier for initial setup.
 
 echo "MongoDB initialization check complete."
-
-# --- 10. Final Health Check and UI Access ---
-echo "--- Waiting for remaining services to become healthy ---"
-# This final check is kept for user experience, providing a clear confirmation that UIs are accessible.
-# The 'docker compose up --wait' command should have already ensured services are healthy.
-# More robust checks for the core UIs
-services_to_check=("airflow-webserver" "grafana" "spline-ui" "openmetadata-server" "spark-history-server" "superset")
-for service in "${services_to_check[@]}"; do
-  echo "Waiting for $service UI..."
-  attempts=0
-  max_attempts=90 # 90 seconds
-  # Adjust the URL/port based on the docker-compose.yml
-  case "$service" in
-    "superset") HEALTH_URL="http://localhost:8088/health";;
-    "airflow-webserver") HEALTH_URL="http://localhost:8080/api/v2/version";;
-    "grafana") HEALTH_URL="http://localhost:3000/api/health";;
-    "webhook-listener") HEALTH_URL="http://localhost:3001/health";; # Assuming /health endpoint for webhook-listener
-    "spline-ui") HEALTH_URL="http://localhost:9090/";; # Spline UI doesn't have a specific /health API on / endpoint itself
-    "openmetadata-server") HEALTH_URL="http://localhost:8585/api/v1/health";;
-    "spark-history-server") HEALTH_URL="http://localhost:18080";;
-    *) HEALTH_URL="";; # Default to empty for unknown services
-  esac
-
-  if [ -n "$HEALTH_URL" ]; then
-    until curl -s -f "$HEALTH_URL" >/dev/null; do
-      printf "."
-      sleep 2
-      attempts=$((attempts+1))
-      if [ $attempts -ge $max_attempts ]; then
-        echo "Error: $service did not become healthy in time. Check 'docker compose logs $service'."
-        break
-      fi
-    done
-    if [ $attempts -lt $max_attempts ]; then
-      echo "$service UI is healthy."
-    fi
-  else
-    echo "Skipping health check for $service (no specific URL defined)."
-  fi
-done
 
 echo "--- Environment Setup Complete! ---"
 echo "All services should now be running and accessible. Here are the key UIs:"

@@ -65,18 +65,26 @@ services:
   openmetadata-migrate-all:
     image: docker.getcollate.io/openmetadata/server:1.7.5
     container_name: openmetadata-migrate-all
-    command: "./bootstrap/openmetadata-ops.sh migrate"
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        # Set environment variables from secrets before running the migration
+        export DB_USER=$$(cat /run/secrets/om_db_user)
+        export DB_USER_PASSWORD=$$(cat /run/secrets/om_db_pass)
+        exec ./bootstrap/openmetadata-ops.sh migrate
     environment:
       DB_DRIVER_CLASS: org.postgresql.Driver
       DB_SCHEME: postgresql
       DB_HOST: openmetadata-postgres
       DB_PORT: 5432
-      DB_USER: openmetadata_user # Hardcoded as _FILE suffix is not supported by this image
-      DB_USER_PASSWORD: openmetadata_password # Hardcoded as _FILE suffix is not supported by this image
       OM_DATABASE: openmetadata_db
       ELASTICSEARCH_HOST: openmetadata-elasticsearch
       ELASTICSEARCH_PORT: 9200
       ELASTICSEARCH_SCHEME: http
+    secrets:
+      - om_db_user
+      - om_db_pass
     depends_on:
       openmetadata-postgres:
         condition: service_healthy
@@ -100,13 +108,16 @@ services:
       DB_SCHEME: postgresql
       DB_HOST: openmetadata-postgres
       DB_PORT: 5432
-      DB_USER: openmetadata_user # Hardcoded as _FILE suffix is not supported by this image
-      DB_USER_PASSWORD: openmetadata_password # Hardcoded as _FILE suffix is not supported by this image
       OM_DATABASE: openmetadata_db
       ELASTICSEARCH_HOST: openmetadata-elasticsearch
       ELASTICSEARCH_PORT: 9200
       ELASTICSEARCH_SCHEME: http
       JAVA_OPTS: "-Xms256m -Xmx512m"
+      DB_USER_FILE: /run/secrets/om_db_user
+      DB_USER_PASSWORD_FILE: /run/secrets/om_db_pass
+    secrets:
+      - om_db_user
+      - om_db_pass
     depends_on:
       openmetadata-migrate-all:
         condition: service_completed_successfully
@@ -210,7 +221,8 @@ services:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8080' || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 60s
     deploy:
       resources:
         limits:
