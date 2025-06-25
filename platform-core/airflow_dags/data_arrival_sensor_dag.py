@@ -1,7 +1,7 @@
 from airflow import DAG
 from airflow.providers.amazon.aws.sensors.s3 import S3KeySensor
 from airflow.operators.bash import BashOperator
-from datetime import datetime, timedelta
+from datetime import datetime # Removed timedelta as it's not used for start_date
 
 with DAG(
     dag_id='data_arrival_sensor_dag',

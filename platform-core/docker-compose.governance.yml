@@ -234,9 +234,9 @@ services:
     platform: linux/amd64
     image: absaoss/spline-web-ui:latest
     container_name: spline-ui
-    restart: always
+    restart: unless-stopped
     environment:
-      SPLINE_CONSUMER_URL: 'http://spline-rest-server:8080/consumer'
+      SPLINE_CONSUMER_URL: 'http://${DOCKER_HOST_EXTERNAL:-localhost}:8082/consumer'
     ports:
       - "9090:8080"
     depends_on:

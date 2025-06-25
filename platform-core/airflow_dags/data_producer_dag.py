@@ -4,7 +4,7 @@ from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
-from datetime import timedelta
+from datetime import datetime, timedelta # Import datetime for start_date
 import json # Not strictly used in this mock but useful for real data
 
 def push_xcom_data(**kwargs):
@@ -16,8 +16,8 @@ def push_xcom_data(**kwargs):
     kwargs['ti'].xcom_push(key='processed_file_path', value=file_path)
 
 with DAG(
-    dag_id='data_producer_dag',
-    start_date=days_ago(1),
+    dag_id='data_producer_dag', # Keep dag_id
+    start_date=datetime(2023, 1, 1), # Use fixed datetime for start_date
     schedule_interval=timedelta(hours=1), # Run hourly
     catchup=False,
     tags=['xcom_demo', 'producer'],

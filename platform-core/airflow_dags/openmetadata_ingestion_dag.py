@@ -5,8 +5,8 @@
 # which leverage the OpenMetadata Python client for ingestion.
 
 from airflow import DAG
-from airflow.operators.bash import BashOperator
-from airflow.operators.dummy import DummyOperator # For start/end tasks
+from airflow.operators.bash import BashOperator # Keep BashOperator
+from airflow.operators.empty import EmptyOperator # Replaced DummyOperator for start/end tasks
 from datetime import datetime, timedelta
 
 default_args = {
@@ -28,7 +28,7 @@ with DAG(
     tags=['openmetadata', 'governance', 'metadata'],
 ) as dag:
 
-    start_ingestion = DummyOperator(task_id='start_metadata_ingestion')
+    start_ingestion = EmptyOperator(task_id='start_metadata_ingestion') # Replaced DummyOperator
 
     # IMPORTANT NOTE: These BashOperators assume that the `openmetadata-ingestion`
     # container is accessible from the Airflow worker, and that the Python client
@@ -64,7 +64,6 @@ with DAG(
     # IMPORTANT NOTE: This task should run after Spark jobs have executed and generated
     # lineage in the Spline backend.
     ingest_spline_lineage = BashOperator(
-        task_id='ingest_spline_lineage',
         bash_command='docker exec advanced-openmetadata-ingestion python '
                      '/opt/openmetadata/examples/workflows/run_metadata_workflow.py '
                      '--config /opt/openmetadata/examples/workflows/spline_connector_config.yaml',
@@ -86,7 +85,7 @@ with DAG(
                      '--config /opt/openmetadata/examples/workflows/mongodb_connector_config.yaml',
     )
 
-    end_ingestion = DummyOperator(task_id='end_metadata_ingestion')
+    end_ingestion = EmptyOperator(task_id='end_metadata_ingestion') # Replaced DummyOperator
 
     # Define the task dependencies
     start_ingestion >> [
@@ -97,4 +96,3 @@ with DAG(
         ingest_fastapi_metadata,
         ingest_mongodb_metadata
     ] >> end_ingestion
-

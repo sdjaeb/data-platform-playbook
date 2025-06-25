@@ -4,7 +4,7 @@ from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
-from airflow.sensors.external_task import ExternalTaskSensor
+from airflow.sensors.external_task import ExternalTaskSensor # Keep ExternalTaskSensor
 from datetime import timedelta
 
 def pull_xcom_data(**kwargs):
@@ -26,8 +26,8 @@ def pull_xcom_data(**kwargs):
         raise ValueError("Failed to retrieve XCom from producer DAG.") # Fail if not found
 
 with DAG(
-    dag_id='data_consumer_dag',
-    start_date=days_ago(1),
+    dag_id='data_consumer_dag', # Keep dag_id
+    start_date=datetime(2023, 1, 1), # Use fixed datetime for start_date
     schedule_interval=timedelta(hours=1), # Also run hourly, aligned with producer
     catchup=False,
     tags=['xcom_demo', 'consumer'],

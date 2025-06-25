@@ -65,7 +65,7 @@ with DAG(
     run_spark_transformation = BashOperator(
         task_id='run_spark_financial_transformation',
         bash_command="""
-        docker exec advanced-spark-master spark-submit \\
+        docker exec spark-master spark-submit \\
             --packages io.delta:delta-core_2.12:2.4.0,org.postgresql:postgresql:42.6.0 \\
             --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \\
             --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \\
@@ -125,11 +125,11 @@ with DAG(
     # This task triggers the OpenMetadata ingestion connector specifically for the
     # Spark lineage and the new Delta Lake table created by the Spark job.
     # IMPORTANT NOTE: This command runs from within the `openmetadata-ingestion` container.
-    # Ensure this container has access to OpenMetadata server and the necessary
+    # Ensure this container has access to the OpenMetadata server and the necessary
     # connector configurations are mounted/available.
     ingest_openmetadata = BashOperator(
         task_id='ingest_openmetadata_for_financial_data',
-        bash_command='docker exec advanced-openmetadata-ingestion python '
+        bash_command='docker exec openmetadata-ingestion python '
                      '/opt/openmetadata/examples/workflows/run_metadata_workflow.py '
                      '--config /opt/openmetadata/examples/workflows/spark_lineage_and_s3_delta_connector_config.yaml',
         doc_md="""
@@ -151,4 +151,3 @@ with DAG(
     # Define task dependencies
     start_ingestion >> prepare_raw_data_delta >> run_spark_transformation
     run_spark_transformation >> validate_postgres_data >> ingest_openmetadata >> end_pipeline
-

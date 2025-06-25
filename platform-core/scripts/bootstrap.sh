@@ -53,11 +53,11 @@ touch ./observability/alloy-config.river # Ensure this file exists for Grafana A
 [ -f "./webhook_listener_app/requirements.txt" ] || echo "flask" > ./webhook_listener_app/requirements.txt
 [ -f "./webhook_listener_app/Dockerfile" ] || echo "FROM python:3.9-slim-buster\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY app.py .\nEXPOSE 8081\nCMD [\"python\", \"app.py\"]" > ./webhook_listener_app/Dockerfile
 
-# Placeholder for data_arrival_sensor_dag.py
+# Placeholder for the main pipeline DAG.
 # This provides a minimal working DAG that matches the "Next Steps" instructions.
 # It allows the user to trigger the main pipeline successfully on first run.
-if [ ! -f "./airflow_dags/full_pipeline_with_governance.py" ]; then
-  cat <<EOF > "./airflow_dags/full_pipeline_with_governance.py"
+if [ ! -f "./airflow_dags/full_pipeline_with_governance_dag.py" ]; then
+  cat <<EOF > "./airflow_dags/full_pipeline_with_governance_dag.py"
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 from datetime import datetime
@@ -334,10 +334,23 @@ echo "🎨 Superset UI:          http://localhost:8088 (User: admin, Pass: admin
 echo "📈 cAdvisor (raw):       http://localhost:8083"
 echo "------------------------------------------------------------------------"
 echo "Next Steps:"
-echo "1. Generate Data: Run 'python3 simulate_data.py' in a new terminal to send data to FastAPI."
-echo "2. Run Spark Streaming: Execute the streaming consumer job via 'docker exec' (see HOWTO for command)."
-echo "3. Trigger Airflow DAGs: In Airflow UI, unpause and trigger 'full_pipeline_with_governance' or 'openmetadata_ingestion_dag'."
-echo "4. Monitor & Explore: Use Grafana, Spline, and OpenMetadata UIs to observe data flow, metrics, and lineage."
+echo "1. Start Sending Data: Use `curl` to start one or more data generators from a new terminal."
+echo "   - Financial Data: `curl http://localhost:5001/start`"
+echo "   - Insurance Data: `curl http://localhost:5002/start`"
+echo "   - Sports Data:    `curl http://localhost:5003/start`"
+echo ""
+echo "2. Review Data Flow & Process Data:"
+echo "   - For detailed CLI commands to verify data flow in Kafka, MinIO, MongoDB, and PostgreSQL, see:"
+echo "     `./docs/data_flow_verification_cheatsheet.md`"
+echo "   - Observe data in Kafka topics (e.g., using 'kcat')."
+echo "   - Run Spark jobs to process streaming data into MinIO's 'raw-data-bucket' (see docs for commands)."
+echo "   - In Airflow (http://localhost:8080), unpause and trigger 'full_pipeline_with_governance' to run batch transformations."
+echo "   - Explore lineage in Spline (http://localhost:9090) and metadata in OpenMetadata (http://localhost:8585)."
+echo ""
+echo "3. Stop Sending Data: When you're done, stop the generators."
+echo "   - Financial Data: `curl http://localhost:5001/stop`"
+echo "   - Insurance Data: `curl http://localhost:5002/stop`"
+echo "   - Sports Data:    `curl http://localhost:5003/stop`"
 echo ""
 echo "To stop all services: 'docker compose down -v'"
 echo "------------------------------------------------------------------------"
