@@ -14,7 +14,6 @@ services:
       - "8000:8000"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      MONGODB_CONNECTION_STRING: mongodb://mongodb:27017/
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY_FILE: /run/secrets/minio_user
       MINIO_SECRET_KEY_FILE: /run/secrets/minio_pass
@@ -23,8 +22,6 @@ services:
       - minio_pass
     depends_on:
       kafka:
-        condition: service_healthy
-      mongodb:
         condition: service_healthy
       minio:
         condition: service_healthy

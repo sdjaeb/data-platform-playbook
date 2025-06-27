@@ -109,6 +109,17 @@ services:
           cpus: '1.0'
           memory: '1g'
 
+  # kcat (formerly kafkacat) - Kafka swiss-army-knife
+  kcat:
+    image: edenhill/kcat:1.7.1
+    container_name: kcat
+    restart: unless-stopped
+    command: ["sleep", "infinity"] # Keep the container running so we can exec into it
+    networks:
+      - data_platform_network
+    depends_on:
+      - kafka
+
   # MinIO: S3-compatible object storage.
   # Used as: The data lake for raw, curated, and processed data layers.
   minio:
@@ -139,24 +150,3 @@ services:
         limits:
           cpus: '0.5'
           memory: '512m'
-
-  # MongoDB: NoSQL document store.
-  # Used for: Storing unstructured or semi-structured data, like events from FastAPI.
-  mongodb:
-    image: mongo:6.0.4
-    container_name: mongodb
-    restart: always
-    ports:
-      - "27017:27017"
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
-    volumes:
-      - mongo_data:/data/db
-    networks:
-      - data_platform_network
-    healthcheck:
-      test: ["CMD-SHELL", "mongosh --eval 'db.adminCommand({ping:1})' --host localhost || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5

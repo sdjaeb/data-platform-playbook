@@ -1,14 +1,13 @@
 # Description: DAG demonstrating failure handling and retries.
 # Source: Highlighting Apache Airflow, Advanced Use Case 2 (Handling Failures and Retries).
 from airflow import DAG
-from airflow.operators.bash import BashOperator
-from airflow.utils.dates import days_ago
-from datetime import timedelta
+from airflow.operators.bash import BashOperator # Keep BashOperator
+from datetime import datetime, timedelta # Use datetime for start_date
 import os
 
 with DAG(
     dag_id='simple_etl_workflow_with_failure', # Changed DAG ID from original simple_etl_workflow
-    start_date=days_ago(1),
+    start_date=datetime(2023, 1, 1), # Use fixed datetime for start_date
     schedule_interval=None,
     catchup=False,
     tags=['example', 'failure_demo'],

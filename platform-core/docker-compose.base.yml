@@ -10,7 +10,6 @@ volumes:
   # General purpose volumes
   postgres_data: # For Airflow's metadata DB and potentially other structured data
   minio_data: # For MinIO object storage (Data Lake)
-  mongo_data: # For MongoDB data
   spark_events: # For Spark History Server logs
   dags: # For Airflow DAG files
   plugins: # For Airflow plugins

@@ -1,13 +1,12 @@
 # Description: Basic ETL workflow DAG.
 # Source: Highlighting Apache Airflow, Basic Use Case.
 from airflow import DAG
-from airflow.operators.bash import BashOperator
-from airflow.utils.dates import days_ago
-from datetime import timedelta # Explicitly import timedelta
+from airflow.operators.bash import BashOperator # Keep BashOperator
+from datetime import datetime, timedelta # Use datetime for start_date
 
 with DAG(
     dag_id='simple_etl_workflow',
-    start_date=days_ago(1), # The date at which the DAG should start running
+    start_date=datetime(2023, 1, 1), # Use fixed datetime for start_date
     schedule_interval=None, # Set to None for manual trigger, or use a cron expression '0 0 * * *' for daily
     catchup=False, # Do not backfill past runs
     tags=['example', 'basic_etl'],

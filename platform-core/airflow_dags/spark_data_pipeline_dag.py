@@ -1,9 +1,8 @@
 # Description: DAG to orchestrate Spark jobs for a financial data lake pipeline.
 # Source: Highlighting Apache Airflow, Advanced Use Case 1 (Orchestrating Spark Jobs).
 from airflow import DAG
-from airflow.operators.bash import BashOperator
-from airflow.utils.dates import days_ago
-from datetime import timedelta
+from airflow.operators.bash import BashOperator # Keep BashOperator
+from datetime import datetime, timedelta # Use datetime for start_date
 
 # Define common Spark submit arguments to connect to MinIO and Delta Lake
 SPARK_COMMON_CONF = (
@@ -18,7 +17,7 @@ SPARK_COMMON_CONF = (
 
 with DAG(
     dag_id='financial_data_lake_pipeline',
-    start_date=days_ago(1),
+    start_date=datetime(2023, 1, 1), # Use fixed datetime for start_date
     schedule_interval=timedelta(minutes=5), # Run every 5 minutes for continuous demo
     catchup=False,
     tags=['data_lake', 'spark', 'etl'],

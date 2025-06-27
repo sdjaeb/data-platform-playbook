@@ -6,10 +6,9 @@
 # different data platform components.
 
 from airflow import DAG
-from airflow.operators.bash import BashOperator
-from airflow.operators.dummy import DummyOperator
-from airflow.utils.dates import days_ago
-from datetime import timedelta
+from airflow.operators.bash import BashOperator # Keep BashOperator for spark-submit
+from airflow.operators.empty import EmptyOperator # Replaced DummyOperator
+from datetime import datetime, timedelta # Use datetime for start_date
 
 default_args = {
     'owner': 'airflow',
@@ -31,7 +30,7 @@ with DAG(
 ) as dag:
 
     # 1. Start Ingestion (Conceptual / Trigger point)
-    start_ingestion = DummyOperator(
+    start_ingestion = EmptyOperator(
         task_id='start_data_ingestion',
         doc_md="""
         ### Start Data Ingestion
@@ -46,7 +45,7 @@ with DAG(
     # the Spark streaming consumer (`streaming_consumer.py`) would be a long-running application
     # external to the daily batch DAG, continuously writing to the raw Delta table.
     # For demonstration purposes, we assume the raw data is already present from the streaming job.
-    prepare_raw_data_delta = DummyOperator(
+    prepare_raw_data_delta = EmptyOperator(
         task_id='prepare_raw_data_in_delta_lake',
         doc_md="""
         ### Prepare Raw Data in Delta Lake
@@ -140,7 +139,7 @@ with DAG(
         """,
     )
 
-    end_pipeline = DummyOperator(
+    end_pipeline = EmptyOperator(
         task_id='end_full_pipeline',
         doc_md="""
         ### End Full Pipeline
