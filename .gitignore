@@ -99,3 +99,6 @@ build/
 # ruff (Python linter)
 .ruff_cache/
 ruff_cache/
+
+# Other
+.repomix/

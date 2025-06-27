@@ -35,21 +35,21 @@ The platform is designed around a layered architecture, promoting modularity, sc
 
 This project leverages the following open-source technologies, which are central to modern data platforms:
 
-*   **FastAPI:** High-performance web framework for building data ingestion APIs.
+*   **Apache Airflow:** Workflow orchestration platform to schedule and monitor data pipelines.
 *   **Apache Kafka:** Distributed streaming platform for real-time data ingestion.
 *   **Apache Spark:** Unified analytics engine for large-scale data processing.
-*   **Delta Lake:** Storage layer bringing ACID transactions to the data lake.
-*   **MinIO:** High-performance, S3-compatible object storage for the local data lake.
-*   **PostgreSQL:** Central relational database for application metadata (Airflow, Superset).
-*   **MongoDB:** NoSQL document database for semi-structured data.
-*   **Apache Airflow:** Workflow orchestration platform to schedule and monitor data pipelines.
 *   **Apache Superset:** Data visualization and business intelligence platform.
-*   **Spline:** Automated data lineage tracking for Apache Spark jobs.
-*   **Containerized Data Generators:** Services that automatically produce mock financial, insurance, and sports data.
+*   **Containerized Data Generators:** Services that automatically produce
 *   **dbt (data build tool):** For managing data transformations and defining data models.
-*   **OpenMetadata:** Unified data catalog for data discovery and governance.
+*   **Delta Lake:** Storage layer bringing ACID transactions to the data lake.
+*   **FastAPI:** High-performance web framework for building data ingestion APIs.
 *   **Grafana Stack (Grafana, Loki, Prometheus, Alloy):** A full observability suite for visualizing metrics, logs, and traces.
 *   **LocalStack:** Emulates AWS services for local cloud development.
+*   **MinIO:** High-performance, S3-compatible object storage for the local data lake.
+*   **OpenMetadata:** Unified data catalog for data discovery and governance.
+*   **PostgreSQL:** Central relational database for application metadata (Airflow, Superset).
+*   **Spline:** Automated data lineage tracking for Apache Spark jobs.
+mock financial, insurance, and sports data.
 
 ## 3. Getting Started
 

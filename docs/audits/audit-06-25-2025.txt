@@ -1,0 +1,58 @@
+# Audit Report: Data Platform Playbook - June 25, 2025
+
+This report details an audit of the `data-platform-playbook` repository to identify potentially unused or redundant files and configurations.
+
+### Summary of Findings
+
+The most critical issue identified is that while Docker secrets are defined and mounted for database and broker credentials, they are not being effectively utilized in the core Airflow connection strings, which currently fall back to hardcoded values. Additionally, there are several redundant or example DAG files that clutter the main workspace, and a few minor redundancies in the Docker Compose configuration.
+
+---
+
+### 1. Critical: Unused Secrets in Core Service Connections
+
+The `docker-compose.orchestration.yml` file defines and mounts secrets for PostgreSQL and Redis, but the primary Airflow environment variables do not use them.
+
+*   **PostgreSQL Connection:**
+    *   The variable `AIRFLOW__DATABASE__SQL_ALCHEMY_CONN` is set to `postgresql+psycopg2://airflow:airflow@postgres/airflow`.
+    *   This hardcodes the user and password as `airflow`. It does not use the `postgres_user` and `postgres_pass` secrets that are mounted into the containers.
+*   **Redis Connection:**
+    *   The variable `AIRFLOW__CELERY__BROKER_URL` is set to `redis://:@redis:6379/0`.
+    *   This configures the connection with no password, ignoring the `redis_pass` secret.
+*   **Unused URL Secrets:**
+    *   The secrets `airflow_db_url` and `redis_url` are mounted into several containers but do not appear to be referenced by any environment variables or commands. They are entirely unused.
+
+This is a significant configuration issue. The platform is less secure than intended because it's not using the managed secrets for its primary operations.
+
+### 2. Redundant and Example Airflow DAGs
+
+The `platform-core/airflow_dags/` directory contains several files that are either examples, placeholders, or duplicates. This makes it difficult to identify the core, operational pipelines.
+
+*   **Duplicate Pipeline DAG:**
+    *   `full_pipeline_with_governance.py`: A simplified placeholder.
+    *   `full_pipeline_with_governance_dag.py`: The more complete, intended implementation.
+    *   Having both files with similar `dag_id`s can cause confusion and potential conflicts in the Airflow UI.
+*   **Example/Demo DAGs:**
+    *   The directory contains numerous DAGs that appear to be for demonstration or testing rather than being part of the main data platform's function. These include:
+        *   `data_consumer_dag.py`
+        *   `data_producer_dag.py`
+        *   `simple_etl_dag.py`
+        *   `simple_etl_workflow_with_failure.py`
+        *   `spark_data_pipeline_dag.py`
+    *   For a cleaner, production-like environment, these could be moved to a separate `examples/` subdirectory or removed.
+
+### 3. Redundancies in Docker Compose Configuration
+
+The `platform-core/docker-compose.orchestration.yml` file has some minor areas of redundancy.
+
+*   **Redundant `echo` Command:**
+    *   The `airflow-init` service contains the command `echo "Setting AIRFLOW__CORE__LOAD_EXAMPLES to false..."`.
+    *   This is redundant because the environment variable `AIRFLOW__CORE__LOAD_EXAMPLES: 'false'` is already set for all Airflow services via the `&airflow-common-env` anchor. The `echo` serves no functional purpose.
+*   **Complex Inline Script:**
+    *   The `airflow-init` service has a long, multi-line shell script embedded directly within the `command` key. While this works, it makes the YAML file harder to read and maintain. This logic could be moved to a dedicated `scripts/airflow-init.sh` file for better separation of concerns.
+
+### 4. Unused Git Hook Files
+
+The `.git/hooks/` directory contains many files ending in `.sample`.
+
+*   **Files:** `commit-msg.sample`, `pre-commit.sample`, `pre-push.sample`, etc.
+*   **Status:** These are inactive template files provided by Git when a repository is initialized. They are not a project-specific issue but are technically "unused" files. They can be safely ignored or removed if you don't plan to implement any Git hooks.
