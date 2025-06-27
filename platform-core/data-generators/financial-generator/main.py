@@ -16,18 +16,19 @@ producer = KafkaProducer(
     value_serializer=lambda v: json.dumps(v).encode("utf-8")
 )
 
-TOPIC_RAW = "raw_insurance_claims"
-TOPIC_MALFORMED = "malformed_insurance_claims"
+TOPIC_RAW = "raw_financial_events"
+TOPIC_MALFORMED = "malformed_financial_events"
+
 def generate_valid():
     return {
-        "claim_id": f"IC-{random.randint(1000,9999)}",
+        "transaction_id": f"FT-{random.randint(1000,9999)}",
         "timestamp": datetime.utcnow().isoformat() + "Z",
-        "policy_number": f"POL-{random.randint(100000,999999)}",
-        "claim_amount": round(random.uniform(100, 10000), 2),
-        "claim_type": random.choice(["auto", "home", "health"]),
-        "claim_status": random.choice(["submitted", "approved", "rejected"]),
-        "customer_id": f"CUST-{fake.lexify(text='???')}",
-        "incident_date": datetime.utcnow().isoformat() + "Z"
+        "account_id": f"ACC-{random.randint(100,999)}",
+        "amount": round(random.uniform(10, 1000), 2),
+        "currency": random.choice(["USD", "EUR", "GBP"]),
+        "transaction_type": random.choice(["debit", "credit"]),
+        "merchant_id": f"MER-{fake.lexify(text='???')}",
+        "category": random.choice(["groceries", "electronics", "travel"])
     }
 
 def generate_data():

@@ -18,6 +18,7 @@ producer = KafkaProducer(
 
 TOPIC_RAW = "raw_insurance_claims"
 TOPIC_MALFORMED = "malformed_insurance_claims"
+
 def generate_valid():
     return {
         "claim_id": f"IC-{random.randint(1000,9999)}",

@@ -26,7 +26,7 @@ echo "All essential prerequisites appear to be met."
 
 # --- 2. Project Directory Setup ---
 echo "--- Setting up project directories ---"
-mkdir -p data/{postgres,mongodb,minio,spark-events,grafana,airflow_logs,openmetadata_elasticsearch,spline_jars}
+mkdir -p data/{postgres,minio,spark-events,grafana,airflow_logs,openmetadata_elasticsearch,spline_jars}
 mkdir -p fastapi_app/app
 mkdir -p pyspark_jobs
 mkdir -p airflow_dags
@@ -38,9 +38,9 @@ mkdir -p dbt_projects
 mkdir -p dbt_profiles
 
 # Create directories for data generators at the repo root
-mkdir -p ../data-generators/financial-generator
-mkdir -p ../data-generators/insurance-generator
-mkdir -p ../data-generators/sports-generator
+mkdir -p ./data-generators/financial-generator
+mkdir -p ./data-generators/insurance-generator
+mkdir -p ./data-generators/sports-generator
 
 # Create dummy files/directories if they don't exist, as required by docker-compose mounts
 touch ./observability/alloy-config.river # Ensure this file exists for Grafana Alloy mount
@@ -113,130 +113,6 @@ data_platform_project:
 EOF
 fi
 
-################################################################################
-# Create placeholder files for data generators
-################################################################################
-
-DOCKERFILE_CONTENT=$(cat <<'EOF'
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-
-# Use pip to install packages
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY main.py .
-CMD ["python", "main.py"]
-EOF
-)
-
-for generator in financial-generator insurance-generator sports-generator; do
-  echo "$DOCKERFILE_CONTENT" > "../data-generators/$generator/Dockerfile"
-  echo -e "requests\nFaker\nflask\nkafka-python" > "../data-generators/$generator/requirements.txt"
-  cat > "../data-generators/$generator/main.py" <<PYEOF
-import threading
-import time
-import random
-import os
-import json
-from datetime import datetime
-from flask import Flask
-from kafka import KafkaProducer
-from faker import Faker
-
-fake = Faker()
-app = Flask(__name__)
-running = False
-producer = KafkaProducer(
-    bootstrap_servers=os.getenv("KAFKA_BROKER", "kafka:29092"),
-    value_serializer=lambda v: json.dumps(v).encode("utf-8")
-)
-
-GENERATOR = "${generator}"
-
-if GENERATOR == "financial-generator":
-    TOPIC_RAW = "raw_financial_events"
-    TOPIC_MALFORMED = "malformed_financial_events"
-    def generate_valid():
-        return {
-            "transaction_id": f"FT-{random.randint(1000,9999)}",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "account_id": f"ACC-{random.randint(100,999)}",
-            "amount": round(random.uniform(10, 1000), 2),
-            "currency": random.choice(["USD", "EUR", "GBP"]),
-            "transaction_type": random.choice(["debit", "credit"]),
-            "merchant_id": f"MER-{fake.lexify(text='???')}",
-            "category": random.choice(["groceries", "electronics", "travel"])
-        }
-elif GENERATOR == "insurance-generator":
-    TOPIC_RAW = "raw_insurance_claims"
-    TOPIC_MALFORMED = "malformed_insurance_claims"
-    def generate_valid():
-        return {
-            "claim_id": f"IC-{random.randint(1000,9999)}",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "policy_number": f"POL-{random.randint(100000,999999)}",
-            "claim_amount": round(random.uniform(100, 10000), 2),
-            "claim_type": random.choice(["auto", "home", "health"]),
-            "claim_status": random.choice(["submitted", "approved", "rejected"]),
-            "customer_id": f"CUST-{fake.lexify(text='???')}",
-            "incident_date": datetime.utcnow().isoformat() + "Z"
-        }
-elif GENERATOR == "sports-generator":
-    TOPIC_RAW = "raw_sports_events"
-    TOPIC_MALFORMED = "malformed_sports_events"
-    def generate_valid():
-        return {
-            "event_id": f"SE-{random.randint(1000,9999)}",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "sport": random.choice(["soccer", "basketball", "tennis"]),
-            "team_a": fake.company(),
-            "team_b": fake.company(),
-            "score_a": random.randint(0, 5),
-            "score_b": random.randint(0, 5),
-            "location": fake.city(),
-            "status": random.choice(["scheduled", "in_progress", "finished"])
-        }
-else:
-    raise Exception("Unknown generator type")
-
-def generate_data():
-    global running
-    while running:
-        msg = generate_valid()
-        producer.send(TOPIC_RAW, msg)
-        print(f"Sent: {msg}")
-        time.sleep(1)
-
-@app.route('/start')
-def start():
-    global running
-    if not running:
-        running = True
-        threading.Thread(target=generate_data, daemon=True).start()
-    return "Started"
-
-@app.route('/stop')
-def stop():
-    global running
-    running = False
-    return "Stopped"
-
-@app.route('/malformed')
-def malformed():
-    count = random.randint(1, 10)
-    for _ in range(count):
-        bad_msg = {"bad_field": "malformed_data", "timestamp": datetime.utcnow().isoformat() + "Z"}
-        producer.send(TOPIC_MALFORMED, bad_msg)
-        print(f"Sent malformed: {bad_msg}")
-    return f"Sent {count} malformed messages"
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
-PYEOF
-done
-
 echo "Placeholder application and configuration files ensured."
 
 # --- 5. Bring up Docker Compose Services ---
@@ -307,16 +183,6 @@ echo "MinIO restarted."
 echo "--- Verifying dbt connection to Spark and Postgres ---"
 docker compose exec dbt dbt debug --profiles-dir /usr/app/dbt_profiles
 echo "dbt debug command executed. Check output for successful connection."
-
-# --- 9. Initial MongoDB Data (Optional) ---
-echo "--- (Optional) Initializing MongoDB with Sample Data ---"
-echo "If MongoDB is critical for your initial setup, you might insert data here."
-echo "For now, this is a placeholder. 'docker compose up --wait' ensures MongoDB is healthy."
-# Example of inserting data using mongosh if needed:
-# docker exec -it mongodb mongosh --authenticationDatabase admin -u root -p password --eval "db.my_data_platform_db.financial_events.insertOne({ 'event_id': 'EVT-001', 'type': 'login_attempt' })"
-# This would require careful escaping and data formatting. Manual insertion via shell is often easier for initial setup.
-
-echo "MongoDB initialization check complete."
 
 echo "--- Environment Setup Complete! ---"
 echo "All services should now be running and accessible. Here are the key UIs:"

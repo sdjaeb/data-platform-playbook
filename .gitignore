@@ -100,5 +100,8 @@ build/
 .ruff_cache/
 ruff_cache/
 
+# bootstrap.sh generated content
+platform-core/secrets/
+
 # Other
 .repomix/

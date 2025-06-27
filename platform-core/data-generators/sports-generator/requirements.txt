@@ -1,0 +1,4 @@
+requests
+Faker
+flask
+kafka-python
