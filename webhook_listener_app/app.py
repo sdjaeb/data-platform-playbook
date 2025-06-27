@@ -1,0 +1,1 @@
+from flask import Flask, request, jsonify\napp = Flask(__name__)\n@app.route('/health', methods=['GET'])\ndef health_check(): return jsonify({"status": "healthy"}), 200\n@app.route('/minio-event', methods=['POST'])\ndef minio_event(): print('MinIO event received!'); return jsonify({"status": "success"})\nif __name__ == '__main__': app.run(host='0.0.0.0', port=8081, debug=True)

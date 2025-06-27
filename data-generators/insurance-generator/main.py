@@ -1,24 +1,17 @@
-import threading
-import time
 import random
-import os
-import json
 from datetime import datetime
-from flask import Flask
-from kafka import KafkaProducer
 from faker import Faker
+from common.generator import create_generator_app
 
+# Initialize Faker for generating realistic fake data
 fake = Faker()
-app = Flask(__name__)
-running = False
-producer = KafkaProducer(
-    bootstrap_servers=os.getenv("KAFKA_BROKER", "kafka:29092"),
-    value_serializer=lambda v: json.dumps(v).encode("utf-8")
-)
 
+# Define Kafka topics specific to this generator
 TOPIC_RAW = "raw_insurance_claims"
 TOPIC_MALFORMED = "malformed_insurance_claims"
-def generate_valid():
+
+def generate_valid_payload():
+    """Generates a single, valid insurance claim payload."""
     return {
         "claim_id": f"IC-{random.randint(1000,9999)}",
         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -30,36 +23,14 @@ def generate_valid():
         "incident_date": datetime.utcnow().isoformat() + "Z"
     }
 
-def generate_data():
-    global running
-    while running:
-        msg = generate_valid()
-        producer.send(TOPIC_RAW, msg)
-        print(f"Sent: {msg}")
-        time.sleep(1)
-
-@app.route('/start')
-def start():
-    global running
-    if not running:
-        running = True
-        threading.Thread(target=generate_data, daemon=True).start()
-    return "Started"
-
-@app.route('/stop')
-def stop():
-    global running
-    running = False
-    return "Stopped"
-
-@app.route('/malformed')
-def malformed():
-    count = random.randint(1, 10)
-    for _ in range(count):
-        bad_msg = {"bad_field": "malformed_data", "timestamp": datetime.utcnow().isoformat() + "Z"}
-        producer.send(TOPIC_MALFORMED, bad_msg)
-        print(f"Sent malformed: {bad_msg}")
-    return f"Sent {count} malformed messages"
+# Create the Flask app using the common factory function
+app = create_generator_app(
+    generator_name='insurance_generator',
+    topic_raw=TOPIC_RAW,
+    topic_malformed=TOPIC_MALFORMED,
+    generate_valid_payload_func=generate_valid_payload
+)
 
 if __name__ == '__main__':
+    # Run the Flask app
     app.run(host='0.0.0.0', port=5000)

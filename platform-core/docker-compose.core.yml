@@ -112,6 +112,7 @@ services:
   # kcat (formerly kafkacat) - Kafka swiss-army-knife
   kcat:
     image: edenhill/kcat:1.7.1
+    platform: linux/amd64
     container_name: kcat
     restart: unless-stopped
     command: ["sleep", "infinity"] # Keep the container running so we can exec into it
