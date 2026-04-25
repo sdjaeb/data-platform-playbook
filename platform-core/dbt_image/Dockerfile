@@ -1,11 +1,7 @@
-# Use a specific Python version that is compatible with dbt-spark
-FROM python:3.10-slim
+FROM python:3.13-slim
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Set the working directory
 WORKDIR /usr/app
 
-# Copy the requirements file
 COPY requirements.txt .
-
-# Install dbt-spark and its dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN uv pip install --system --no-cache -r requirements.txt

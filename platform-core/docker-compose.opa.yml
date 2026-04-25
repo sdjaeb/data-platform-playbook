@@ -1,0 +1,17 @@
+services:
+  opa:
+    image: openpolicyagent/opa:latest
+    container_name: opa
+    ports:
+      - "8181:8181"
+    command:
+      - "run"
+      - "--server"
+      - "--log-level=debug"
+    networks:
+      - data_platform_network
+    healthcheck:
+      test: ["CMD", "opa", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

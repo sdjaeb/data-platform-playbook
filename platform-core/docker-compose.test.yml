@@ -5,11 +5,9 @@
 # It uses separate volumes and environment variables to avoid conflicts with
 # the main development environment.
 
-version: '3.8'
-
 services:
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.4.0
+    image: confluentinc/cp-zookeeper:7.8.0
     container_name: test-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
@@ -20,7 +18,7 @@ services:
       retries: 5
 
   kafka:
-    image: confluentinc/cp-kafka:7.4.0
+    image: confluentinc/cp-kafka:7.8.0
     container_name: test-kafka
     depends_on:
       zookeeper:
@@ -82,7 +80,7 @@ services:
   # This worker is configured to run in 'local[*]' mode within the container,
   # simplifying test setup as it doesn't need a separate master.
   spark-test-runner:
-    image: bitnami/spark:3.5.0
+    image: bitnami/spark:3.5.3
     container_name: test-spark-runner
     depends_on:
       kafka:

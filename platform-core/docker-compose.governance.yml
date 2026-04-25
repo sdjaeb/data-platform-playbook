@@ -5,7 +5,7 @@ services:
 
   # OpenMetadata PostgreSQL: A dedicated database instance for OpenMetadata's metadata.
   openmetadata-postgres:
-    image: postgres:13
+    image: postgres:17
     container_name: openmetadata-postgres
     restart: always
     environment:

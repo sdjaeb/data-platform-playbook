@@ -104,4 +104,4 @@ ruff_cache/
 platform-core/secrets/
 
 # Other
-.repomix/
+.repomix/\n# Labs\nlabs/

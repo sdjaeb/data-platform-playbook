@@ -1,11 +1,10 @@
-# Description: Dockerfile for FastAPI application.
-# Source: Building Enterprise-Ready Data Platforms v2.4, Appendix A.4 (Conceptual).
-#
-# This Dockerfile remains largely consistent across Intermediate and Advanced tracks,
-# with additional dependencies for OpenTelemetry in the Advanced track.
-FROM python:3.10-slim-buster
+FROM python:3.14-slim
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app/main.py /app/app/main.py
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+RUN uv pip install --system --no-cache -r requirements.txt
+
+COPY app /app/app
+EXPOSE 8000
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

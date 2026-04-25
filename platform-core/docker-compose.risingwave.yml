@@ -1,0 +1,14 @@
+services:
+  risingwave:
+    image: risingwavelabs/risingwave:latest
+    container_name: risingwave
+    command: [ "playground" ]
+    ports:
+      - "4566:4566"
+    networks:
+      - data_platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

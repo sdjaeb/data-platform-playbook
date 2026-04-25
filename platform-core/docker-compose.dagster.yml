@@ -1,0 +1,24 @@
+services:
+  dagster:
+    image: dagster/dagster-celery-k8s:latest # Using a feature-rich image for the lab
+    container_name: dagster
+    environment:
+      - DAGSTER_HOME=/opt/dagster/dagster_home
+    volumes:
+      - ./dagster_home:/opt/dagster/dagster_home
+    networks:
+      - data_platform_network
+
+  dagster-webserver:
+    image: dagster/dagster-webserver:latest
+    container_name: dagster-webserver
+    ports:
+      - "3001:3000"
+    environment:
+      - DAGSTER_HOME=/opt/dagster/dagster_home
+    volumes:
+      - ./dagster_home:/opt/dagster/dagster_home
+    networks:
+      - data_platform_network
+    depends_on:
+      - dagster
