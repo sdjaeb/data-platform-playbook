@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+pydantic
+tenacity
+httpx
+pytest
+presidio-analyzer
+python-dotenv
+langchain
+langchain-openai
+langgraph
+pandas
