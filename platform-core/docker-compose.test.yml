@@ -80,7 +80,7 @@ services:
   # This worker is configured to run in 'local[*]' mode within the container,
   # simplifying test setup as it doesn't need a separate master.
   spark-test-runner:
-    image: bitnami/spark:3.5.3
+    image: bitnami/spark:3.5.1
     container_name: test-spark-runner
     depends_on:
       kafka:

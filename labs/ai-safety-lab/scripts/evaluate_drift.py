@@ -1,4 +1,3 @@
-import json
 from difflib import SequenceMatcher
 import logging
 
@@ -86,7 +85,7 @@ if __name__ == "__main__":
     avg, details = evaluate_model(mock_llm_outputs)
     
     print("\n" + "="*40)
-    print(f"EVALUATION REPORT")
+    print("EVALUATION REPORT")
     print("="*40)
     print(f"Average Accuracy Score: {avg:.2%}")
     print("-" * 40)

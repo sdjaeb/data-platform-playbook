@@ -1,4 +1,3 @@
-import json
 from scripts.evaluate_drift import evaluate_model
 import logging
 
@@ -31,7 +30,7 @@ def run_suite(actual_outputs):
     avg, details = evaluate_model(actual_outputs)
     
     print("\n" + "="*40)
-    print(f"OFFICIAL TEST RESULTS")
+    print("OFFICIAL TEST RESULTS")
     print("="*40)
     print(f"Overall Accuracy: {avg:.2%}")
     

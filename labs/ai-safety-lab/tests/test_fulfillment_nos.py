@@ -1,4 +1,3 @@
-import pytest
 from fastapi.testclient import TestClient
 from app.fulfillment_nos import app, RoutingRecommendation
 

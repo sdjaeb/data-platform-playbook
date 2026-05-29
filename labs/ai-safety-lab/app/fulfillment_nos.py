@@ -1,12 +1,9 @@
-import os
-import json
 import logging
-from typing import Annotated, Dict, List, TypedDict, Union, Any, Optional
+from typing import Dict, List, TypedDict, Any, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, END
-import httpx
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -42,7 +39,7 @@ MOCK_INVENTORY = {
 async def analyze_routing(state: AgentState):
     """LLM Node: Proposes a routing solution."""
     order = state["order_data"]
-    inventory = state["inventory_snapshot"]
+    state["inventory_snapshot"]
     
     # MOCKING LLM response
     if state.get("retries", 0) == 0:

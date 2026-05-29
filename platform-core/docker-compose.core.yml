@@ -21,7 +21,7 @@ services:
       - dbt_db_user
       - dbt_db_pass
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ../data/postgres:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d # Script to create Superset DB on init
     networks:
       - data_platform_network
@@ -39,16 +39,15 @@ services:
   # Redis: In-memory data store.
   # Used by: Airflow (Celery message broker), Superset (caching).
   redis:
-    image: redis:6.2-alpine # Lightweight and stable Redis version
+    image: redis:7.2-alpine # Lightweight and stable Redis version
     container_name: redis
     restart: always
-    command: redis-server --requirepass $(cat /run/secrets/redis_pass) --appendonly yes
-    secrets:
-      - redis_pass
+    ports:
+      - "6379:6379"
     networks:
       - data_platform_network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "$(cat /run/secrets/redis_pass)", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -81,7 +80,7 @@ services:
   # Kafka: Distributed event streaming platform.
   # Used for: Real-time data ingestion from FastAPI and consumption by Spark Streaming.
   kafka:
-    image: confluentinc/cp-kafka:7.5.0
+    image: confluentinc/cp-kafka:7.8.0
     container_name: kafka
     ports:
       - "9092:9092" # External port for Kafka clients
@@ -115,7 +114,7 @@ services:
     platform: linux/amd64
     container_name: kcat
     restart: unless-stopped
-    command: ["sleep", "infinity"] # Keep the container running so we can exec into it
+    entrypoint: ["tail", "-f", "/dev/null"]
     networks:
       - data_platform_network
     depends_on:
@@ -138,7 +137,7 @@ services:
       - minio_pass
     command: server /data --console-address ":9001"
     volumes:
-      - minio_data:/data
+      - ../data/minio:/data
     networks:
       - data_platform_network
     healthcheck:

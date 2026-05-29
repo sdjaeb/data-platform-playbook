@@ -104,4 +104,9 @@ ruff_cache/
 platform-core/secrets/
 
 # Other
-.repomix/\n# Labs\nlabs/
+.repomix/
+data/
+platform-core/data/
+gsess.txt
+
+

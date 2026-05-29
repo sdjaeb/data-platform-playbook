@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manifest Staff Engineering Handbook: The Ingestor Dossier</title>
+    <style>
+        :root {
+            --primary: #00f2ff;
+            --bg: #0d1117;
+            --card: #161b22;
+            --text: #c9d1d9;
+            --accent: #58a6ff;
+            --success: #238636;
+            --warning: #d29922;
+            --danger: #da3633;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+        }
+        .container { max-width: 1100px; margin: 0 auto; padding: 60px 20px; }
+        header { border-bottom: 2px solid #30363d; padding-bottom: 30px; margin-bottom: 50px; }
+        h1 { color: var(--primary); font-size: 2.8rem; margin: 0; }
+        h2 { color: var(--accent); border-left: 5px solid var(--primary); padding-left: 15px; margin-top: 50px; text-transform: uppercase; letter-spacing: 1px; }
+        h3 { color: var(--primary); margin-top: 30px; border-bottom: 1px solid #333; padding-bottom: 5px;}
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 20px 0; }
+        .card { background: var(--card); border: 1px solid #30363d; padding: 20px; border-radius: 12px; }
+        .forensic-box { border: 1px solid var(--success); background: #06120a; padding: 15px; border-radius: 8px; }
+        .ml-box { border: 1px solid var(--warning); background: #121006; padding: 15px; border-radius: 8px; }
+
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; background: #0d1117; }
+        th, td { text-align: left; padding: 12px; border: 1px solid #30363d; }
+        th { background: #21262d; color: var(--primary); }
+
+        .terminal { background: #000; color: #0f0; padding: 15px; border-radius: 6px; font-family: 'SFMono-Regular', monospace; font-size: 0.85rem; margin: 10px 0; }
+        .diagram { background: #fff; color: #000; padding: 40px; border-radius: 12px; text-align: center; font-weight: bold; font-family: monospace; margin: 30px 0; }
+        .highlight { color: var(--primary); font-weight: bold; }
+
+        /* PRINT FRIENDLY STYLES */
+        @media print {
+            body { background-color: white !important; color: black !important; }
+            .container { max-width: 100%; padding: 0; }
+            .card, .forensic-box, .ml-box, .terminal { 
+                background: white !important; 
+                color: black !important; 
+                border: 1px solid #ccc !important; 
+                box-shadow: none !important;
+            }
+            h1, h2, h3 { color: black !important; border-color: black !important; }
+            .highlight { color: black !important; text-decoration: underline; }
+            .diagram { border: 2px solid black; box-shadow: none; color: black !important; }
+            a { color: black; }
+            table { border: 1px solid black; }
+            th { background: #eee !important; color: black !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Manifest Staff Engineering Handbook</h1>
+            <p><strong>Architectural Dossier:</strong> Scaling Supply Chain Security to 100k+ TPS</p>
+        </header>
+
+        <!-- 1. THE PROBLEM -->
+        <section id="problem">
+            <h2>1. The Problem: The Invisible Supply Chain</h2>
+            <div class="grid">
+                <div class="card">
+                    <h3>Legacy Handling</h3>
+                    <p>Enterprises currently rely on <strong>Post-Mortem Scans</strong>. Once a vulnerability like <em>Log4Shell</em> is public, teams spend weeks manually searching fragments of their cloud infrastructure to see if they are exposed.</p>
+                </div>
+                <div class="card">
+                    <h3>The Graph Complexity</h3>
+                    <p>Modern apps are graphs, not lists. Ingesting one SBOM/AIBOM involves 5,000+ transitive dependencies. Multiplying this by 10,000 cloud builds a day creates a <strong>Data Velocity</strong> problem that standard relational databases cannot solve.</p>
+                </div>
+            </div>
+            <div class="forensic-box">
+                <p><strong>Staff Insight:</strong> We treat SBOMs and AIBOMs as <strong>Forensic Evidence</strong>. Per CHFI principles, we prioritize <strong>Acquisition</strong> without modification. Our Bronze layer is an immutable record of exactly what was submitted by the vendor—including <strong>Model Weights and Dataset Metadata</strong>—ensuring <strong>Non-Repudiation</strong> in the event of a supply chain breach or model poisoning incident.</p>
+            </div>
+        </section>
+
+        <!-- 2. VALUE PROPOSITION -->
+        <section id="value">
+            <h2>2. The Value Proposition</h2>
+            <p>Manifest moves security from an <strong>External Audit</strong> to an <strong>Internal Capability</strong>.</p>
+            <ul>
+                <li><span class="highlight">Continuous Compliance:</span> Automated OPA policies reject insecure components in the CI/CD pipeline, not after deployment.</li>
+                <li><span class="highlight">Proactive Alerting:</span> We notify the client the second a new CVE hits the global database if we detect a match in their stored inventory.</li>
+                <li><span class="highlight">Operational Resilience:</span> Handles 100k TPS spikes (Log4j events) while maintaining sub-second serving latency.</li>
+            </ul>
+        </section>
+
+        <!-- 3. ARCHITECTURE -->
+        <section id="architecture">
+            <h2>3. Architecture & High-Scale Strategy</h2>
+            
+            <div class="diagram">
+                [CVE FEEDS] → [INGRESS] → [BUFFER] → [BRONZE] → [SILVER] → [GOLD] → [NOTIFIER]
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <h3>Slice 0: CVE Ingestor (The Pulse)</h3>
+                    <p>Queries NVD API v2 and OSV.dev every 60 seconds. New vulnerabilities are treated as <strong>Streaming Events</strong>, not static files, ensuring sub-5-minute Mean Time to Detection (MTTD).</p>
+                </div>
+                <div class="card">
+                    <h3>Slice 1: Multi-Tenant Ingress (Go)</h3>
+                    <p>Designed for **1M TPS potential**. Performs lightweight schema validation (CycloneDX 1.6) and deterministic hashing (SHA-256). Uses **Circuit Breakers** to prevent cascading failures.</p>
+                </div>
+                <div class="card">
+                    <h3>Slice 2: Burst Buffer (Redpanda)</h3>
+                    <p>A C++ Kafka alternative that provides low-latency persistence for incoming wire bytes. Ensures **Zero Data Loss** even during massive ingestion spikes.</p>
+                </div>
+                <div class="card">
+                    <h3>Slice 3: Bronze (Forensic S3)</h3>
+                    <p>The **Immutable Record**. We use Content-Addressable Storage (CAS). Every SBOM/AIBOM is stored as an exact byte-for-byte copy of the submission for legal audit.</p>
+                </div>
+                <div class="card">
+                    <h3>Slice 4: Silver (Vectorized Enrichment)</h3>
+                    <p>We use **Polars/DuckDB** to transform raw payloads into enriched Parquet. Vectorized compute on high-mem cloud nodes eliminates the network shuffle costs of Spark.</p>
+                </div>
+                <div class="card">
+                    <h3>Slice 5: Gold (Analytical Serving)</h3>
+                    <p>**TiDB / Snowflake**. Powers the serving layer with horizontal scale. Separates high-speed serving state from durable analytical state (DDIA Principle).</p>
+                </div>
+            </div>
+
+            <div class="forensic-box" style="border-color: var(--accent); background: #060a12;">
+                <h3>Staff Architectural Insight: Serving Layer Persistence</h3>
+                <p><strong>Is Redis "persistent" enough?</strong> No. Redis is a **Write-Through Cache** for OPA verdicts (10ms latency). Long-term persistence resides in TiDB. Because our Gold layer is <strong>Derived Data</strong>, we can re-hydrate the entire serving layer from the Bronze "Evidence" in S3 at any time.</p>
+            </div>
+        </section>
+
+        <!-- 4. PROACTIVE ALERTING DESIGN -->
+        <section id="notifications">
+            <h2>4. Proactive Vulnerability Alerting</h2>
+            <div class="grid">
+                <div class="card">
+                    <h3>The Detection Loop</h3>
+                    <p>We implement a <strong>Reverse Lookup Engine</strong>. When a new CVE is published, we join it against the global <strong>Gold Layer Inventory</strong>. We find the match <em>before</em> the client even knows they are vulnerable.</p>
+                </div>
+                <div class="card">
+                    <h3>The Notification Dispatcher</h3>
+                    <p>A <strong>Fan-Out Switchboard</strong> that decouples detection from delivery. If a client's webhook is down, the Dispatcher uses <strong>Exponential Backoff</strong> without blocking other alerts.</p>
+                </div>
+            </div>
+
+            <div class="forensic-box" style="border-color: var(--warning); background: #121006;">
+                <h3>Staff Architectural Insight: The Dispatcher Pattern</h3>
+                <p>To support Email (SES), SMS (Twilio), and Webhooks concurrently, we use a <strong>Queue-Based Dispatcher</strong>. Every notification is logged for **Forensic Non-Repudiation**, proving the client was warned at a specific timestamp.</p>
+            </div>
+        </section>
+
+        <!-- 5. MACHINE LEARNING -->
+        <section id="ml">
+            <h2>5. Machine Learning Integration</h2>
+            <div class="ml-box">
+                <h3>Stage 1: Ingestion Anomaly Detection</h3>
+                <p>Detect "Malicious SBOMs"—payloads designed to trigger logic bombs or ReDoS attacks during the enrichment join.</p>
+                
+                <h3>Stage 2: Semantic Security Discovery (RAG)</h3>
+                <p>**Weaviate + Ollama** allows security teams to perform natural language audits: <em>"Find all models trained on copyrighted datasets."</em></p>
+                
+                <h3>Stage 3: Predictive Vulnerability Scoring</h3>
+                <p>ML models analyze AIBOM dataset hashes to predict model risk even before a CVE is formally assigned by NVD.</p>
+            </div>
+        </section>
+
+        <!-- 6. DISASTER RECOVERY & OBSERVABILITY -->
+        <section id="dr">
+            <h2>6. Disaster Recovery & Observability</h2>
+            <p><strong>Disaster Recovery:</strong> We utilize **Kafka Offset Replay**. If the Silver layer crashes, we rewind the consumer. Our Bronze layer is <strong>Multi-Region S3</strong>, ensuring "Evidence" is never lost if a datacenter goes dark.</p>
+            <p><strong>Observability (The LGTM Stack):</strong> We use <strong>Loki, Grafana, Tempo, and Mimir</strong>. At 100k TPS, we monitor <em>Saturation</em> and <em>Error Rates</em> via Tracing to follow an SBOM from the Boeing CLI to OPA.</p>
+        </section>
+
+        <!-- 7. GOVERNANCE & LINEAGE -->
+        <section id="governance">
+            <h2>7. Governance & Lineage</h2>
+            <p>We implement **Forensic Lineage** using OpenMetadata:</p>
+            <ul>
+                <li><span class="highlight">Upstream:</span> Track which vendor CID (Content ID) supplied a specific package.</li>
+                <li><span class="highlight">Downstream:</span> Identify every container or AI model currently running a vulnerable component.</li>
+                <li><span class="highlight">Data Contracts:</span> Automated checks ensure incoming SBOMs meet CycloneDX 1.6 standards before hitting the processing queue.</li>
+            </ul>
+        </section>
+
+        <!-- 8. THE LAB -->
+        <section id="lab">
+            <h2>Appendix: The Manifest Lab Walkthrough</h2>
+            
+            <div class="card">
+                <h3>Step 0: Initialize Shared Network</h3>
+                <p>We use a dedicated Docker network to simulate a <strong>Cloud VPC</strong>. This ensures isolated, low-latency communication between our multi-tenant ingestors and the backing data stores.</p>
+                <div class="terminal">
+                    docker network create platform-core_data_platform_network || true
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Step 1: Bring up Staff Infrastructure</h3>
+                <p>We initialize the <strong>High-Scale Stack</strong>:</p>
+                <ul>
+                    <li><strong>Redpanda:</strong> A C++ Kafka-compatible bus for sub-millisecond message persistence.</li>
+                    <li><strong>TiDB:</strong> Our NewSQL Gold Layer, providing horizontal scale with MySQL compatibility.</li>
+                    <li><strong>Weaviate:</strong> The Vector Database powering our RAG Discovery Agent.</li>
+                    <li><strong>Redis:</strong> The 10ms "Hot Path" cache for security policy verdicts.</li>
+                </ul>
+                <div class="terminal">
+                    docker compose -f platform-core/docker-compose.manifest-staff.yml up -d
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>Step 2: Start the Pipeline</h3>
+                <p>We launch the three core services that form the <strong>Forensic Chain</strong>:</p>
+                <ul>
+                    <li><strong>The Ingestor (Go):</strong> Handles 100k+ concurrent connections using Goroutines. It performs <strong>Content-Addressable Hashing</strong> (SHA-256) immediately.</li>
+                    <li><strong>The Consumer (Python/AIOKafka):</strong> Asynchronously streams raw wire-bytes from Redpanda to <strong>Immutable Bronze Storage</strong> (MinIO/S3).</li>
+                    <li><strong>The Serving API (FastAPI):</strong> Interfaces with OPA and Redis to provide sub-second "Allow/Reject" verdicts for CI/CD pipelines.</li>
+                </ul>
+                <div class="terminal">
+                    # Terminal 2: Ingestor<br>
+                    (cd labs/manifest-lab/ingestor-go && go run main.go)<br><br>
+                    # Terminal 3: Bronze Consumer<br>
+                    uv run python labs/manifest-lab/app/bronze_consumer.py<br><br>
+                    # Terminal 4: Serving Layer<br>
+                    uv run uvicorn labs.manifest-lab.app.api:app --port 8000
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Step 3: Simulate a 50k TPS Spike</h3>
+                <p>We exercise the <strong>Resiliency Layer</strong>. The load generator fires a burst of requests to the Go Ingestor. You will observe the Go worker pool managing the load while Redpanda absorbs the write-velocity, ensuring the processing layer never feels the pressure of the spike.</p>
+                <div class="terminal">
+                    go run labs/manifest-lab/jobs/stress_load.go -rate 50000 -c 200
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Step 4: Analytical Enrichment (DuckDB + Weaviate)</h3>
+                <p>We perform <strong>Forensic Re-tagging</strong>. DuckDB executes a vectorized join to override vendor "NONE" severities with actual CRITICAL data. We then sync these high-risk findings into Weaviate using the <strong>v4 GRPC client</strong>.</p>
+                <div class="terminal">
+                    uv run python labs/manifest-lab/jobs/staff_enrichment_duckdb.py
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Step 5: Semantic Security Discovery (RAG)</h3>
+                <p>We transition from keyword search to <strong>Intent-Based Discovery</strong>. The RAG agent uses Ollama to generate embeddings and Weaviate to find "similar" threats across the entire global inventory.</p>
+                <div class="terminal">
+                    uv run python labs/manifest-lab/jobs/rag_discovery.py<br>
+                    uv run python labs/manifest-lab/jobs/query_weaviate.py "Find critical logging threats"
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Step 6: Perform an Audit Trace</h3>
+                <p>The "Proof of Work." We follow a specific <strong>Content-ID (CID)</strong> from the raw evidence in Bronze, through the vectorized transformation in Silver, to the final security verdict in the Gold Serving layer.</p>
+                <div class="terminal">
+                    uv run python labs/manifest-lab/jobs/audit_trace.py log4j@2.14.1
+                </div>
+            </div>
+        </section>
+
+        <!-- 9. INTERVIEW PREP -->
+        <section id="prep">
+            <h2>Final Staff Highlights</h2>
+            <table>
+                <tr>
+                    <th>Question</th>
+                    <th>Staff Answer</th>
+                </tr>
+                <tr>
+                    <td><strong>Polars vs Spark?</strong></td>
+                    <td>We prioritize <strong>Vectorized Execution</strong>. For SBOM joins at Manifest's velocity, Spark's network shuffle is a bottleneck. We scale up vertically with Polars/DuckDB to maximize throughput, only scaling out if the graph exceeds multi-terabyte limits.</td>
+                </tr>
+                <tr>
+                    <td><strong>Why AIBOM?</strong></td>
+                    <td>Modern software is <strong>Model-Driven</strong>. We track model weight provenance as forensic artifacts to prevent adversarial "Model Poisoning" attacks.</td>
+                </tr>
+                <tr>
+                    <td><strong>Idempotency?</strong></td>
+                    <td>We use <strong>Content-Addressable Storage (CAS)</strong>. The SHA-256 hash IS the identity. This ensures redundant CI/CD submissions never double-count risk or storage.</td>
+                </tr>
+                <tr>
+                    <td><strong>Proactive vs Reactive?</strong></td>
+                    <td>Most platforms wait for a scan. We use a <strong>Reverse Lookup Engine</strong> to notify the client the moment a threat is published to NVD, reducing MTTD to minutes.</td>
+                </tr>
+            </table>
+        </section>
+    </div>
+</body>
+</html>

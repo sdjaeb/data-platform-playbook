@@ -1,0 +1,62 @@
+services:
+  # Redpanda: High-performance Kafka alternative (C++)
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: redpanda-staff
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 1G
+      - --overprovisioned
+      - --node-id 0
+      - --check=false
+      - --reserve-memory 0M
+      - --kafka-addr PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      - --advertise-kafka-addr PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+    ports:
+      - "9092:9092"
+      - "9644:9644"
+    networks:
+      - platform-core_data_platform_network
+
+  # TiDB: Distributed SQL (MySQL Compatible) - The "Gold" Layer for Scale
+  tidb:
+    image: pingcap/tidb:latest
+    container_name: tidb-staff
+    ports:
+      - "4000:4000" # MySQL Protocol
+      - "10080:10080" # Status Port
+    networks:
+      - platform-core_data_platform_network
+
+  # Weaviate: Vector Database for RAG & Security Discovery
+  weaviate:
+    image: semitechnologies/weaviate:latest
+    container_name: weaviate-staff
+    ports:
+      - "8083:8080"
+      - "50051:50051"
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: ''
+    networks:
+      - platform-core_data_platform_network
+
+  # Redis: High-speed Cache for OPA Verdicts
+  redis-staff:
+    image: redis:7.2-alpine
+    container_name: redis-staff
+    ports:
+      - "6379:6379"
+    networks:
+      - platform-core_data_platform_network
+
+  # DuckDB Service (Optional: DuckDB is usually a library, but we can run a proxy)
+  # For this lab, we will use the DuckDB Python library in our jobs.
+
+networks:
+  platform-core_data_platform_network:
+    external: true

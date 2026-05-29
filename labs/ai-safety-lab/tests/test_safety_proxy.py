@@ -1,4 +1,3 @@
-import pytest
 from fastapi.testclient import TestClient
 from app.safety_proxy import app, detect_pii
 
@@ -6,9 +5,9 @@ client = TestClient(app)
 
 def test_detect_pii_logic():
     # Presidio/Regex detection
-    assert detect_pii("Contact Sample Patient A at 555-123-4567") == True
-    assert detect_pii("My SSN is 123-45-6789") == True
-    assert detect_pii("Safe summary of patient health.") == False
+    assert detect_pii("Contact Sample Patient A at 555-123-4567")
+    assert detect_pii("My SSN is 123-45-6789")
+    assert not detect_pii("Safe summary of patient health.")
 
 def test_middleware_pii_blocking(monkeypatch):
     """Test that the Middleware blocks response if LLM returns PII."""

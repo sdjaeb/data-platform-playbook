@@ -7,7 +7,7 @@ services:
     environment:
       - MONGO_INITDB_DATABASE=gold_db
     volumes:
-      - mongodb_data:/data/db
+      - ../data/mongodb:/data/db
     networks:
       - data_platform_network
     healthcheck:

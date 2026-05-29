@@ -1,9 +1,9 @@
 import json
 import logging
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type

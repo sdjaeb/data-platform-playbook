@@ -7,11 +7,14 @@ services:
     command:
       - "run"
       - "--server"
-      - "--log-level=debug"
+      - "--addr"
+      - ":8181"
+      - "--log-level"
+      - "debug"
     networks:
       - data_platform_network
     healthcheck:
-      test: ["CMD", "opa", "health"]
+      test: ["CMD-SHELL", "sh -c '</dev/tcp/localhost/8181'"]
       interval: 10s
       timeout: 5s
       retries: 5
