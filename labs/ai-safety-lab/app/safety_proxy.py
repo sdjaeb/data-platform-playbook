@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import uuid
 from typing import Dict, Any
 
 from fastapi import FastAPI, Request, Response
@@ -24,6 +25,11 @@ class PatientAnalysis(BaseModel):
     summary: str
     risk_level: int
     recommended_action: str
+
+
+class AnalysisRequest(BaseModel):
+    patient_data: str
+    sensitive_input_approved: bool = False
 
 # --- 4. The "Orchestration" (State) ---
 CIRCUIT_BREAKER_LIMIT = 3
@@ -55,6 +61,7 @@ async def safety_guardrail_middleware(request: Request, call_next):
     Middleware that intercepts responses from /analyze to validate 
     PII and Schema compliance before reaching the client.
     """
+    trace_id = request.headers.get("x-trace-id") or str(uuid.uuid4())
     response = await call_next(request)
     
     # Only intercept successful /analyze responses
@@ -87,7 +94,12 @@ async def safety_guardrail_middleware(request: Request, call_next):
                 )
                 
             # Re-construct response if safe
-            return Response(content=body, status_code=200, media_type="application/json")
+            return Response(
+                content=body,
+                status_code=200,
+                media_type="application/json",
+                headers={"x-trace-id": trace_id},
+            )
             
         except Exception as e:
             logger.error(f"Middleware Error: {e}")
@@ -132,10 +144,15 @@ def fallback_response() -> Dict[str, Any]:
 
 # --- 1. The "Harness" (Endpoint) ---
 @app.post("/analyze")
-async def analyze_patient_data(data: Dict[str, str]):
+async def analyze_patient_data(data: AnalysisRequest):
     global failure_counter
     
-    patient_info = data.get("patient_data", "")
+    patient_info = data.patient_data
+    if detect_pii(patient_info) and not data.sensitive_input_approved:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Sensitive input requires explicit approval"},
+        )
     
     if failure_counter >= CIRCUIT_BREAKER_LIMIT:
         logger.warning("Circuit breaker tripped!")

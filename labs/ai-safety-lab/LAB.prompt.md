@@ -19,7 +19,8 @@ You are building an internal API for a BioTech company. The AI must summarize pa
 
 ### 3. The "Evaluation Suite" (Simple RAGAS-style test)
 - Create a `test_suite.py` that contains a "Golden Dataset" (Input vs. Expected Output).
-- Use a similarity metric (e.g., `SequenceMatcher` or a small embeddings model) to compare the LLM's summary against the Golden version.
+- Use a clearly named lexical metric such as `SequenceMatcher`; do not describe
+  it as semantic correctness.
 - **Goal:** Prove you can "quantify" model performance.
 
 ### 4. The "Orchestration" (Resilience)
@@ -33,4 +34,6 @@ You are building an internal API for a BioTech company. The AI must summarize pa
 - `README.md`: A 3-sentence summary of how this handles "Non-deterministic AI" in a "Deterministic Architecture."
 
 ## Why This Wins the Interview
-When the HM asks about "Model Evaluation," you don't say "I've read about it." You say: **"I built a CI/CD-integrated evaluation script that measures semantic drift against a golden dataset and fails the build if accuracy drops."**
+Describe this as a CI-integrated lexical regression check with versioned
+development, held-out, privacy, and malformed-output fixtures. State what human
+calibration is still required.

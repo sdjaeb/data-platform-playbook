@@ -20,6 +20,12 @@ def test_middleware_pii_blocking(monkeypatch):
     assert response.status_code == 502
     assert "PII Detected" in response.json()["detail"]
 
+
+def test_sensitive_input_requires_explicit_approval():
+    response = client.post("/analyze", json={"patient_data": "SSN 123-45-6789"})
+    assert response.status_code == 400
+    assert "explicit approval" in response.json()["detail"]
+
 def test_middleware_schema_blocking(monkeypatch):
     """Test that the Middleware blocks response if LLM returns invalid schema."""
     async def mock_call_llm(prompt):

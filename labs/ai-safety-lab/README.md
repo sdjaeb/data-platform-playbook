@@ -1,6 +1,9 @@
 # AI Safety & Governance Intelligence Layer
 
-This system bridges the gap between non-deterministic LLM outputs and deterministic enterprise requirements by enforcing strict Pydantic schema validation and PII scrubbing at the middleware layer. It implements architectural resilience using circuit breakers and exponential backoff to ensure high availability even when the underlying model service is unstable. A dedicated evaluation suite quantifies model performance against a golden dataset, enabling automated detection of semantic drift and performance degradation in CI/CD pipelines.
+This reference lab wraps non-deterministic output with schema and privacy
+checks. Its demonstration evaluator measures exact and lexical agreement
+against versioned fixtures; it does not establish semantic or domain
+correctness without calibrated human review.
 
 ## 🚀 Key Features
 
@@ -14,7 +17,9 @@ A formal **FastAPI Middleware** layer acts as an automated "Safe-by-Design" gate
 - **Resilience**: Integrated **Circuit Breaking** and exponential backoff to maintain system availability during LLM service outages.
 
 ### 3. CI/CD Model Evaluation
-An "Official Test Suite" containing a **Golden Dataset** (Input vs. Expected Output). It quantifies model performance using semantic similarity metrics (SequenceMatcher), allowing teams to "fail the build" if accuracy drops below the 80% threshold.
+The fixture set separates development and held-out cases and includes negative
+privacy and malformed-output scenarios. `SequenceMatcher` is a lexical
+demonstration metric; the 80% lab threshold requires domain-owner calibration.
 
 ## 🛠️ Key Technologies
 
@@ -40,4 +45,6 @@ python scripts/test_suite.py
 ```
 
 ## 🧠 Philosophy: Non-Deterministic AI in Deterministic Architecture
-In high-stakes domains like BioTech and Logistics, AI cannot be allowed to operate without supervision. This project demonstrates a **Principal Engineer-level pattern** for wrapping LLMs in code that is deterministic, testable, and resilient. We treat the LLM as a high-risk, "flaky" third-party dependency that must be audited and corrected by the system at runtime.
+This lab demonstrates deterministic wrappers and failure scenarios. It is a
+reference exercise, not production or compliance evidence. See
+`EVALUATION_LINEAGE.md` for promotion requirements.
