@@ -5,9 +5,9 @@ x-airflow-common: &airflow-common
     # Core Airflow configurations
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow # Connects to the 'postgres' service
-    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
-    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0 # Connects to the 'redis' service
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD: 'cat /run/secrets/airflow_db_url'
+    AIRFLOW__CELERY__RESULT_BACKEND_CMD: 'cat /run/secrets/airflow_db_url'
+    AIRFLOW__CELERY__BROKER_URL_CMD: 'cat /run/secrets/redis_url'
     AIRFLOW__CORE__FERNET_KEY_FILE: /run/secrets/airflow_fernet
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
